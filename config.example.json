@@ -51,6 +51,19 @@
             "base_url": "http://localhost:11434/v1",
             "api_key": "ollama",
             "default_model": "qwen3.5:4b"
+        },
+        "cursor": {
+            "type": "custom",
+            "api_style": "anthropic",
+            "base_url": "http://localhost:3000",
+            "api_key": "",
+            "default_model": "cursor-fast"
+        },
+        "local-llm": {
+            "type": "custom",
+            "api_style": "openai",
+            "base_url": "http://localhost:8080/v1",
+            "default_model": "my-model"
         }
     }
 }
