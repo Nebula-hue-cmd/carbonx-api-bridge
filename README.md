@@ -28,16 +28,35 @@ on the mock provider so it works immediately.
 
 ### Using a real model
 
-1. Open `config.json`.
-2. Paste an API key into a provider block:
-   ```json
-   "openai": { "type": "openai", "api_key": "sk-your-real-key", "default_model": "gpt-4o-mini" }
-   ```
-3. Save and restart the bridge.
+1. Open the control panel: `http://localhost:8787/`.
+2. Paste an API key into a provider and click *Save & apply* — no restart.
+   (Or edit `config.json` directly:
+   `"openai": { "type": "openai", "api_key": "sk-your-real-key", "default_model": "gpt-4o-mini" }`.)
 
 The access token printed at first startup goes into the Lumen/bridge client
 settings, not into `config.json`. For multiple users on one server, hand each
 user their own token from `auth.tokens`; provider keys stay server-side.
+
+---
+
+## Control panel
+
+The bridge serves a small control panel in your browser, so you never have to
+edit `config.json` by hand:
+
+1. Start the bridge (double-click `run.bat`) — it prints the panel address.
+2. Open `http://localhost:8787/` (the panel is loopback-only, so it only
+   listens on the machine running the bridge).
+3. From the panel you can:
+   - **Copy your access token** (or generate new ones for each user).
+   - **Paste API keys** into providers, switch the default provider, change a
+     base URL or model. Click *Save & apply* — changes take effect
+     immediately, no restart.
+   - Keys are never shown again after saving; the panel only reports whether a
+     key is set.
+
+If the bridge prints `http://localhost:8787/`, just open it while the bridge
+is running. There is no separate install — the panel is part of the bridge.
 
 ---
 
@@ -161,6 +180,7 @@ python -m carbonx_bridge                 # run (auto-creates config.json if need
 python -m carbonx_bridge --token <token> # add a token without editing config.json
 python -m carbonx_bridge --port 9000     # change the port
 python -m carbonx_bridge --host 0.0.0.0  # listen for other machines
+python -m carbonx_bridge --open          # open the control panel in your browser
 python -m carbonx_bridge --version
 ```
 
@@ -183,6 +203,9 @@ python -m carbonx_bridge --version
   and headers are never logged.
 - **No arbitrary URL proxying.** The bridge only talks to configured provider
   base URLs.
+- **Control panel is loopback-only.** `/` and the `/ui/*` endpoints only
+  answer from the machine running the bridge; keys written through the panel
+  are never returned or logged.
 - **Clean errors only**: `400 401 403 404 405 413 429 500 502`, JSON
   `{"error":{"type","message","code"}}`, plus `Retry-After` on 429.
 - **Deployment**: run locally or behind your own TLS terminator.

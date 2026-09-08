@@ -87,8 +87,8 @@ class TempConfigDir:
 class RunningServer:
     """Start a real bridge server on an ephemeral port; gives the base URL."""
 
-    def __init__(self, cfg):
-        server = create_server(cfg)
+    def __init__(self, cfg, config_path=None):
+        server = create_server(cfg, config_path=config_path)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.server = server
