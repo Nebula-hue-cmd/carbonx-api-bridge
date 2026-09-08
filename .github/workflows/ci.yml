@@ -22,7 +22,9 @@ jobs:
       - name: Redaction smoke (working tree)
         shell: bash
         run: |
-          if git grep -nE 'sk-[A-Za-z0-9]{12,}|ghp_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}' -- . ':!CHANGELOG.md' 2>/dev/null; then
+          # tests/* intentionally contain fake secret-shaped strings (redaction
+          # fixtures); scan everything else for real credential shapes.
+          if git grep -nE 'sk-[A-Za-z0-9]{12,}|ghp_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}' -- . ':(exclude)tests/*' 2>/dev/null; then
             echo "::error::secret-like token found in tracked files"
             exit 1
           fi
