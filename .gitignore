@@ -3,11 +3,14 @@ config.json
 .env
 *.key
 *.pem
+build/
+dist/
+*.spec
+.venv-build/
+screenshots/
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
-dist/
 .venv/
 venv/
 

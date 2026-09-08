@@ -232,6 +232,8 @@ class Handler(BaseHTTPRequestHandler):
     def _ui_new_token(self):
         self._require_loopback()
         patch = parse_json(self._route())
+        if patch.get("action") == "delete":
+            return self._ui_delete_token(patch)
         token = secrets.token_urlsafe(24)
         user = str(patch.get("user") or "you")
         tier = str(patch.get("tier") or "admin")
@@ -245,6 +247,26 @@ class Handler(BaseHTTPRequestHandler):
             raise BadRequest(str(ex))
         _swap_app(self, cfg)
         self._send_json(200, {"token": token, "user": user, "tier": tier})
+
+    def _ui_delete_token(self, patch):
+        target = str(patch.get("token") or "")
+        if not target:
+            raise BadRequest("no token given to delete")
+
+        def mutator(data):
+            tokens = data.setdefault("auth", {}).setdefault("tokens", {})
+            if target not in tokens:
+                raise ValueError("no such token")
+            if len(tokens) <= 1:
+                raise ValueError("cannot delete the last token (you would lock yourself out)")
+            del tokens[target]
+
+        try:
+            cfg = _ui_persist(self.app.config_path, mutator)
+        except ValueError as ex:
+            raise BadRequest(str(ex))
+        _swap_app(self, cfg)
+        self._send_json(200, {"ok": True})
 
     def _ui_save_config(self):
         self._require_loopback()

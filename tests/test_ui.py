@@ -81,6 +81,59 @@ class TestTokens(unittest.TestCase):
             tmp.cleanup()
 
 
+class TestTokenDeletion(unittest.TestCase):
+    def test_delete_second_token_persists(self):
+        server, tmp = _make_ui_server(
+            {
+                "auth": {
+                    "tokens": {
+                        "t-one": {"user": "alice", "tier": "admin"},
+                        "t-two": {"user": "bob", "tier": "free"},
+                    }
+                }
+            }
+        )
+        try:
+            status, body = server.json("/ui/token", body={"action": "delete", "token": "t-two"})
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+            status, body = server.json("/ui/token")
+            self.assertEqual(status, 200)
+            remaining = sorted(t["token"] for t in body["tokens"])
+            self.assertEqual(remaining, ["t-one", "test-token-admin"])
+            with open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.assertNotIn("t-two", data["auth"]["tokens"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_cannot_delete_last_token(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json("/ui/token", body={"action": "delete", "token": "test-token-admin"})
+            self.assertEqual(status, 400)
+            self.assertIn("last token", body["error"]["message"])
+            status, body = server.json("/ui/token")
+            self.assertEqual(status, 200)
+            self.assertEqual(len(body["tokens"]), 1)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_delete_unknown_token(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json("/ui/token", body={"action": "delete", "token": "nope"})
+            self.assertEqual(status, 400)
+            self.assertIn("no such token", body["error"]["message"])
+            status, _ = server.json("/health")
+            self.assertEqual(status, 200)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+
 class TestConfigEditor(unittest.TestCase):
     def test_config_view_is_sanitized(self):
         cfg = make_config(

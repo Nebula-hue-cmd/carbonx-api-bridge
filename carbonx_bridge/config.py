@@ -17,9 +17,18 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CONFIG_PATH = os.path.abspath(os.path.join(HERE, "..", "config.json"))
+
+# When frozen (portable .exe via PyInstaller) the package dir is a temp
+# extraction folder, so user files live NEXT TO the exe instead of in the
+# repo root. "var:NAME" resolves relative to THAT location.
+if getattr(sys, "frozen", False):
+    PROJECT_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    PROJECT_DIR = os.path.dirname(HERE)
+DEFAULT_CONFIG_PATH = os.path.join(PROJECT_DIR, "config.json")
 
 DEFAULT_CONFIG = {
     "server": {
@@ -84,7 +93,7 @@ def resolve(value, env=None):
 
 
 def load_dotenv(path=None):
-    path = path or os.path.join(HERE, "..", ".env")
+    path = path or os.path.join(PROJECT_DIR, ".env")
     if not os.path.exists(path):
         return
     with open(path, "r", encoding="utf-8-sig") as fh:
