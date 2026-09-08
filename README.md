@@ -1,9 +1,11 @@
 # CarbonX API Bridge
 
-A **Bring-Your-Own-Key** (BYOK) HTTP API bridge for LLMs. Clients (Lumen scripts,
-editors, consoles) talk to one stable JSON API; the bridge handles auth, rate
-limits, and provider routing for OpenAI, Anthropic, OpenRouter, Cursor, local
-models, or any custom endpoint.
+A **Bring-Your-Own-Key** (BYOK) HTTP API bridge for LLMs, **for Windows**.
+Clients (Lumen scripts, editors, consoles) talk to one stable JSON API; the
+bridge handles auth, rate limits, and provider routing for OpenAI, Anthropic,
+OpenRouter, Cursor, local models, or any custom endpoint. Lumen externally
+supports Windows only, so the whole stack — client and bridge — is built for
+Windows.
 
 - **Pure Python 3.10+ standard library** — zero dependencies, zero downloads.
 - **Zero-setup start**: if `config.json` is missing, the bridge creates one with
@@ -19,9 +21,7 @@ models, or any custom endpoint.
 
 1. Install Python 3.10+ from https://python.org (tick *"Add python.exe to PATH"*).
 2. Download this project and extract it.
-3. Start the bridge:
-   - **Windows:** double-click `run.bat`
-   - **Any OS:** `python -m carbonx_bridge`
+3. **Double-click `run.bat`.**
 
 The bridge writes `config.json` if needed, prints the access token, and starts
 on the mock provider so it works immediately.
