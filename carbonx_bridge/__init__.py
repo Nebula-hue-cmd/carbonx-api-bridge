@@ -3,7 +3,7 @@
 See README.md for architecture, security model, and the Lumen integration.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from .server import App, create_server  # noqa: F401
 from .errors import ApiError  # noqa: F401

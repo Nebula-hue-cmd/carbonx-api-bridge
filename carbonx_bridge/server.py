@@ -16,14 +16,19 @@ request bodies are never logged.
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import sys
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import config as cfg_mod
+from . import ui
 from .auth import Authenticator
 from .errors import (
     ApiError,
+    BadRequest,
+    Forbidden,
     NotFound,
     UpstreamError,
 )
@@ -32,7 +37,7 @@ from .providers import build_all, pick
 from .redact import redact
 from .streaming import done, error_chunk, stream_provider_events
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 QUIET_ENDPOINTS = {"/v1/stream"}
 
@@ -158,12 +163,18 @@ class Handler(BaseHTTPRequestHandler):
     # -- wire ------------------------------------------------------------
     def do_GET(self):
         try:
-            if self.path.split("?")[0] == "/health":
-                self._health()
-            elif self.path.split("?")[0] == "/v1/models":
-                self._models()
-            else:
-                raise NotFound()
+            path = self.path.split("?")[0]
+            if path == "/":
+                return self._ui_page()
+            if path == "/health" or path == "/ui/status":
+                return self._health()
+            if path == "/v1/models":
+                return self._models()
+            if path == "/ui/token":
+                return self._ui_tokens()
+            if path == "/ui/config":
+                return self._ui_config()
+            raise NotFound()
         except ApiError as ex:
             self._error(ex)
         except Exception as ex:  # noqa: BLE001
@@ -176,6 +187,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._chat()
             if path == "/v1/stream":
                 return self._stream()
+            if path == "/ui/token":
+                return self._ui_new_token()
+            if path == "/ui/config":
+                return self._ui_save_config()
             raise NotFound()
         except StopStreaming:
             return
@@ -188,6 +203,77 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Allow", "GET, POST, OPTIONS")
         self.end_headers()
+
+    # -- control panel (loopback-only) -----------------------------------
+    def _require_loopback(self):
+        if not ui.is_loopback(self.client_address[0]):
+            raise Forbidden("the control panel is loopback-only (must run on this machine)")
+
+    def _ui_page(self):
+        data = ui.PAGE.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _ui_tokens(self):
+        self._require_loopback()
+        tokens = [
+            {"token": token, "user": info.get("user", "?"), "tier": info.get("tier", "free")}
+            for token, info in (self.app.cfg["auth"].get("tokens") or {}).items()
+        ]
+        self._send_json(200, {"tokens": tokens})
+
+    def _ui_config(self):
+        self._require_loopback()
+        self._send_json(200, _ui_config_view(self.app.cfg))
+
+    def _ui_new_token(self):
+        self._require_loopback()
+        patch = parse_json(self._route())
+        token = secrets.token_urlsafe(24)
+        user = str(patch.get("user") or "you")
+        tier = str(patch.get("tier") or "admin")
+
+        def mutator(data):
+            data.setdefault("auth", {}).setdefault("tokens", {})[token] = {"user": user, "tier": tier}
+
+        try:
+            cfg = _ui_persist(self.app.config_path, mutator)
+        except ValueError as ex:
+            raise BadRequest(str(ex))
+        _swap_app(self, cfg)
+        self._send_json(200, {"token": token, "user": user, "tier": tier})
+
+    def _ui_save_config(self):
+        self._require_loopback()
+        patch = parse_json(self._route())
+
+        def mutator(data):
+            np = patch.get("default_provider")
+            if np and isinstance(np, str) and np.strip():
+                data["default_provider"] = np.strip()
+            for name, fields in (patch.get("providers") or {}).items():
+                if not isinstance(fields, dict):
+                    continue
+                current = data.setdefault("providers", {}).setdefault(name, {})
+                for key, value in fields.items():
+                    if value is None:
+                        continue
+                    value = str(value).strip()
+                    if key == "api_key":
+                        if value:  # empty string means "keep the current key"
+                            current["api_key"] = value
+                    elif value:
+                        current[key] = value
+
+        try:
+            cfg = _ui_persist(self.app.config_path, mutator)
+        except ValueError as ex:
+            raise BadRequest(str(ex))
+        _swap_app(self, cfg)
+        self._send_json(200, {"ok": True, "note": "applied without restart"})
 
     # -- endpoints -------------------------------------------------------
     def _health(self):
@@ -262,12 +348,63 @@ def _internal(ex):
     )
 
 
-def create_server(cfg, host=None, port=None):
+def create_server(cfg, host=None, port=None, config_path=None):
     app = App(cfg)
+    app.config_path = config_path or cfg_mod.DEFAULT_CONFIG_PATH
     server = ThreadingHTTPServer((host or cfg["server"]["host"], int(port or cfg["server"]["port"])), Handler)
     server.daemon_threads = True
     Handler.app = app
     return server
+
+
+def _ui_config_view(cfg):
+    providers = {}
+    for name, pc in (cfg["providers"] or {}).items():
+        entry = {"type": pc.get("type", "openai")}
+        for key in ("api_style", "base_url", "default_model"):
+            if pc.get(key):
+                entry[key] = pc[key]
+        if pc.get("models"):
+            entry["models"] = list(pc["models"])
+        entry["has_key"] = bool(pc.get("api_key"))  # value is NEVER returned
+        providers[name] = entry
+    return {
+        "default_provider": cfg["default_provider"],
+        "providers": providers,
+        "server": {
+            "host": cfg["server"].get("host"),
+            "port": cfg["server"].get("port"),
+            "require_auth": bool(cfg["server"].get("require_auth", True)),
+        },
+    }
+
+
+def _ui_persist(config_path, mutator):
+    """Edit the on-disk config, validate it, write atomically, and reload.
+
+    Returns the freshly loaded config; raises ValueError on invalid edits.
+    """
+    path = config_path or cfg_mod.DEFAULT_CONFIG_PATH
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+    else:
+        data = {}
+    mutator(data)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    os.replace(tmp, path)
+    return cfg_mod.load_config(path)
+
+
+def _swap_app(handler, cfg):
+    """Hot-swap the running App (and global CONFIG) without a restart."""
+    app = App(cfg)
+    app.config_path = handler.app.config_path
+    Handler.app = app
+    cfg_mod.CONFIG = cfg
 
 
 def main(argv=None):
@@ -285,6 +422,11 @@ def main(argv=None):
         help="extra admin token (added to auth.tokens as user 'you', tier 'admin'); "
         "use when you do not want to edit config.json just to add a token",
     )
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="open the control panel in your browser once the bridge is up",
+    )
     args = parser.parse_args(argv)
 
     created, generated_token = cfg_mod.ensure_config()
@@ -297,9 +439,9 @@ def main(argv=None):
         print("[bridge]   %s" % generated_token)
         print("[bridge]")
         print("[bridge] The bridge is running on the built-in mock AI right now.")
-        print("[bridge] To use a real model: open config.json, paste your API key")
-        print("[bridge] into one of the providers, then restart.")
-        print("[bridge] (For example:      \"openai\": { \"api_key\": \"sk-your-key-here\" })")
+        print("[bridge] To use a real model: open the control panel in your browser")
+        print("[bridge]   ->  http://127.0.0.1:%s/   (paste an API key, click save)" % cfg_mod.DEFAULT_CONFIG.get("server", {}).get("port", 8787))
+        print("[bridge] or edit config.json and paste a key into one of the providers.")
         print("=" * 62)
 
     try:
@@ -314,10 +456,15 @@ def main(argv=None):
         cfg.setdefault("auth", {}).setdefault("tokens", {})
         cfg["auth"]["tokens"][args.token] = {"user": "you", "tier": "admin"}
 
-    server = create_server(cfg, host=args.host, port=args.port)
+    server = create_server(cfg, host=args.host, port=args.port, config_path=cfg_mod.DEFAULT_CONFIG_PATH)
     host, port = server.server_address[:2]
     print("[bridge] carbonx-api-bridge v%s" % __version__)
     print("[bridge] listening on http://%s:%s  (127.0.0.1 = THIS machine, always)" % (host, port))
+    print("[bridge] control panel: http://127.0.0.1:%s/  (open in a browser on this PC)" % port)
+    if args.open and host in ("127.0.0.1", "::1", "0.0.0.0"):
+        import webbrowser
+
+        webbrowser.open("http://127.0.0.1:%s/" % port)
     print("[bridge] providers: %s (default %s)" % (", ".join(sorted(cfg["providers"])) or "(none)", cfg["default_provider"]))
     require = cfg["server"].get("require_auth", True)
     anon = cfg["server"].get("allow_anon", False)
