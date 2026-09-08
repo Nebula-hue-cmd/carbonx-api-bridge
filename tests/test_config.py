@@ -56,5 +56,56 @@ class TestLoadConfig(unittest.TestCase):
             config.resolve("env:NOPE", {})
 
 
+class TestEnsureConfig(unittest.TestCase):
+    def test_creates_with_random_token_and_mock(self):
+        import tempfile
+
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "config.json")
+        created, token = config.ensure_config(path)
+        self.assertTrue(created)
+        self.assertTrue(token and len(token) >= 20)
+        loaded = config.load_config(path)
+        self.assertEqual(loaded["default_provider"], "mock")
+        self.assertIn(token, loaded["auth"]["tokens"])
+        self.assertEqual(loaded["auth"]["tokens"][token]["tier"], "admin")
+        self.assertIn("cursor", loaded["providers"])
+        self.assertEqual(loaded["providers"]["cursor"]["type"], "custom")
+
+    def test_never_overwrites_existing(self):
+        import tempfile
+
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "config.json")
+        created, _ = config.ensure_config(path)
+        self.assertTrue(created)
+        with open(path, "r", encoding="utf-8") as fh:
+            first = fh.read()
+        created2, token2 = config.ensure_config(path)
+        self.assertFalse(created2)
+        self.assertIsNone(token2)
+        with open(path, "r", encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), first)
+
+    def test_custom_and_other_types_accepted(self):
+        import tempfile
+
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "config.json")
+        created, _ = config.ensure_config(path)
+        self.assertTrue(created)
+        import json
+
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        data["providers"]["openaistyle"] = {"type": "custom", "api_style": "openai", "base_url": "http://localhost:8080/v1"}
+        data["providers"]["alias"] = {"type": "other", "api_style": "anthropic", "base_url": "http://localhost:3000"}
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        loaded = config.load_config(path)
+        self.assertIn("openaistyle", loaded["providers"])
+        self.assertIn("alias", loaded["providers"])
+
+
 if __name__ == "__main__":
     unittest.main()

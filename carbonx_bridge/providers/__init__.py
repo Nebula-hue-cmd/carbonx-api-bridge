@@ -11,6 +11,7 @@ from __future__ import annotations
 from ..errors import BadRequest, ConfigError
 from .anthropic import Anthropic
 from .base import Provider  # noqa: F401  (re-export for tests)
+from .custom import CustomProvider
 from .mock import Mock
 from .opencode import OpenCode
 from .openrouter import OpenRouter
@@ -21,6 +22,8 @@ FACTORY = {
     "anthropic": Anthropic,
     "openrouter": OpenRouter,
     "opencode": OpenCode,
+    "custom": CustomProvider,
+    "other": CustomProvider,
     "mock": Mock,
 }
 

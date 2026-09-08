@@ -32,7 +32,7 @@ from .providers import build_all, pick
 from .redact import redact
 from .streaming import done, error_chunk, stream_provider_events
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 QUIET_ENDPOINTS = {"/v1/stream"}
 
@@ -271,15 +271,54 @@ def create_server(cfg, host=None, port=None):
 
 
 def main(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    cfg_mod.init()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="carbonx-bridge",
+        description="CarbonX API Bridge — BYOK LLM gateway (REST + SSE).",
+    )
+    parser.add_argument("--version", action="version", version="carbonx-api-bridge %s" % __version__)
+    parser.add_argument("--host", help="override server.host from config.json (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, help="override server.port from config.json (default 8787)")
+    parser.add_argument(
+        "--token",
+        help="extra admin token (added to auth.tokens as user 'you', tier 'admin'); "
+        "use when you do not want to edit config.json just to add a token",
+    )
+    args = parser.parse_args(argv)
+
+    created, generated_token = cfg_mod.ensure_config()
+    if created:
+        print("=" * 62)
+        print("[bridge] No config.json found — I created one for you.")
+        print("[bridge]")
+        print("[bridge] Your access token (paste this into your Lumen/bridge settings):")
+        print("[bridge]")
+        print("[bridge]   %s" % generated_token)
+        print("[bridge]")
+        print("[bridge] The bridge is running on the built-in mock AI right now.")
+        print("[bridge] To use a real model: open config.json, paste your API key")
+        print("[bridge] into one of the providers, then restart.")
+        print("[bridge] (For example:      \"openai\": { \"api_key\": \"sk-your-key-here\" })")
+        print("=" * 62)
+
+    try:
+        cfg_mod.init()
+    except ValueError as ex:
+        print("[bridge] ERROR in config.json: %s" % ex)
+        print("[bridge] Fix the file, or delete it and restart so one is created for you.")
+        raise SystemExit(1)
     cfg = cfg_mod.CONFIG
-    server = create_server(cfg)
+
+    if args.token:
+        cfg.setdefault("auth", {}).setdefault("tokens", {})
+        cfg["auth"]["tokens"][args.token] = {"user": "you", "tier": "admin"}
+
+    server = create_server(cfg, host=args.host, port=args.port)
     host, port = server.server_address[:2]
     print("[bridge] carbonx-api-bridge v%s" % __version__)
-    print("[bridge] listening on http://%s:%s" % (host, port))
-    print("[bridge] providers: %s" % (", ".join(sorted(cfg["providers"])) or "(none)"))
-    print("[bridge] default provider: %s" % cfg["default_provider"])
+    print("[bridge] listening on http://%s:%s  (127.0.0.1 = THIS machine, always)" % (host, port))
+    print("[bridge] providers: %s (default %s)" % (", ".join(sorted(cfg["providers"])) or "(none)", cfg["default_provider"]))
     require = cfg["server"].get("require_auth", True)
     anon = cfg["server"].get("allow_anon", False)
     if require and not anon:
@@ -288,6 +327,7 @@ def main(argv=None):
         print("[bridge] auth required, but anon tier is enabled")
     else:
         print("[bridge] WARNING: auth is DISABLED (require_auth: false)")
+    sys.stdout.flush()  # make startup logs/banners visible even when piped
     try:
         server.serve_forever()
     except KeyboardInterrupt:

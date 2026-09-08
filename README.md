@@ -2,10 +2,13 @@
 
 A **Bring-Your-Own-Key** (BYOK), provider-abstraction HTTP API bridge for LLMs.
 Your Lumen scripts, editors, and consoles talk to one stable, minimal JSON API;
-the bridge talks to OpenAI, Anthropic, OpenRouter (and any OpenAI-compatible
-endpoint such as Ollama) on a per-user, server-side-managed basis.
+the bridge talks to OpenAI, Anthropic, OpenRouter, Cursor, local models
+(Ollama/vLLM/etc.), or anything else you can point it at — on a per-user,
+server-side-managed basis.
 
-- **Pure Python 3.10+ standard library** — zero dependencies, runs offline.
+- **Pure Python 3.10+ standard library** — zero dependencies, zero downloads.
+- **Zero-setup start**: no `config.json`? The bridge creates one for you with a
+  random access token and starts on a built-in mock AI immediately.
 - **Secure by default**: auth required, per-tier server-side rate limits,
   hard request caps, and secret redaction at every logging boundary.
 - **Honest streaming**: `text/event-stream` for providers that support it;
@@ -17,44 +20,57 @@ Lumen / Luau client ── HTTPS/JSON (bearer token) ──> CarbonX API Bridge 
 
 ---
 
-## Quick start
+## Setup in 30 seconds (Windows)
 
-```bash
-git clone https://github.com/<you>/carbonx-api-bridge.git
-cd carbonx-api-bridge
-cp config.example.json config.json     # then edit: tokens, keys, models
-python -m carbonx_bridge               # or: pip install -e . && carbonx-bridge
-```
+1. **Install Python** from https://python.org (tick *"Add python.exe to PATH"*).
+2. **Download this project** (GitHub → green *Code* button → Download ZIP →
+   extract it anywhere).
+3. **Double-click `run.bat`**.
 
-Startup prints the bound address, provider list, and the auth posture.
-Secrets live **only** in `config.json` / `.env` (via `env:VAR`); they are
-never logged and never appear in responses or errors.
+That's it. The bridge writes `config.json` for you, prints your access token,
+and starts running with the mock AI so you can verify it works.
 
-### Minimal config
+To use a **real** model:
 
-```json
-{
-  "server": { "host": "127.0.0.1", "port": 8787, "require_auth": true, "allow_anon": false },
-  "auth": {
-    "tokens": { "REPLACE-WITH-A-LONG-RANDOM-TOKEN": { "user": "you", "tier": "admin" } },
-    "rate_limits": {
-      "anon": { "rpm": 10, "rpd": 200 },
-      "free": { "rpm": 30, "rpd": 1000 },
-      "premium": { "rpm": 120, "rpd": 5000 },
-      "admin": { "rpm": 1000, "rpd": 100000 }
-    }
-  },
-  "default_provider": "openai",
-  "providers": {
-    "openai":   { "type": "openai",     "api_key": "env:OPENAI_API_KEY", "default_model": "gpt-4o-mini" },
-    "claude":   { "type": "anthropic",  "api_key": "env:ANTHROPIC_API_KEY", "default_model": "claude-3-5-sonnet-latest" },
-    "openrouter": { "type": "openrouter", "api_key": "env:OPENROUTER_API_KEY", "default_model": "openai/gpt-4o-mini" }
-  }
-}
-```
+1. Open `config.json` (right-click → Open with → Notepad).
+2. Find one of the provider blocks, e.g.:
+   ```json
+   "openai": { "type": "openai", "api_key": "", "default_model": "gpt-4o-mini" }
+   ```
+3. Paste your key between the quotes: `"api_key": "sk-your-real-key"`.
+4. Save, close the window, double-click `run.bat` again.
 
-Provider keys may also be set inline; `env:NAME` is preferred. Never commit
-`config.json`.
+Your access token (printed the first time) goes **into the Lumen/bridge
+settings**, never into `config.json` on machines you don't fully control —
+and never into any shared file.
+
+> **Multiple users on one server?** Put each person's `api_key` in your
+> server's `config.json`, and hand out random tokens from `auth.tokens` (one
+> per person). The bridge keeps all keys server-side; users only ever hold
+> their token.
+
+---
+
+## What is `127.0.0.1:8787`, and will it break for other people?
+
+**No — it works for everyone, as long as they run everything on one computer.**
+
+`127.0.0.1` (or "localhost") is not *your* address. It is a name every single
+computer uses for **itself**. When the bridge prints
+`listening on http://127.0.0.1:8787`, it means *"listening on this computer,
+port 8787"* — on any machine, with no changes.
+
+- **Bridge + Lumen on the same PC** → `127.0.0.1:8787` works with zero edits,
+  everywhere.
+- **Bridge on a different machine** (e.g. a shared home server) → set
+  `server.host` to `0.0.0.0` in `config.json`, and in the Lumen client set the
+  URL to `http://<that-server's-ip>:8787`. `127.0.0.1` still just means
+  "this machine" — you must give the *other* machine's address.
+- **Ports** are changeable too: `server.port`, or `--port 9000` on the command
+  line.
+
+The URL is configurable on **both** sides — there is no hardcoded personal
+address anywhere.
 
 ---
 
@@ -122,8 +138,41 @@ Mid-stream errors emit a `data: {"type":"error","error":{...}}` event before
 | `openai` | OpenAI Chat Completions | `base_url` adjustable (Ollama, vLLM, etc.) |
 | `anthropic` | Anthropic Messages | `x-api-key` + `anthropic-version`; event/data SSE |
 | `openrouter` | OpenAI-compatible | optional `HTTP-Referer` / `X-Title` via `headers` |
-| `opencode` | OpenAI-compatible (`https://opencode.ai/zen/go/v1`) | **explicit opt-in** — requires `x_opencode_session` |
+| `custom` / `other` | OpenAI **or** Anthropic | **bring your own** — Cursor, any local server |
+| `opencode` | OpenAI-compatible | explicit opt-in — requires `x_opencode_session` |
 | `mock` | none (in-process) | deterministic fake for local testing, CI |
+
+### Bring your own model (`custom` / `other`)
+
+For anything not in the list — Cursor's local proxy, vLLM, LiteLLM, llama.cpp,
+LM Studio, Open WebUI, a teammate's GPU box, a new service that launched last
+week. Pick the wire format it speaks; most things speak OpenAI's, Cursor
+speaks both:
+
+```json
+"cursor": {
+  "type": "custom",
+  "api_style": "anthropic",
+  "base_url": "http://localhost:3000",
+  "api_key": "",
+  "default_model": "cursor-fast"
+},
+"local-llm": {
+  "type": "custom",
+  "api_style": "openai",
+  "base_url": "http://localhost:8080/v1",
+  "default_model": "my-model"
+}
+```
+
+- `base_url` — **required** (no default: it points at *your* endpoint).
+- `api_style` — `openai` (default) or `anthropic`; Cursor exposes both.
+- `api_key` — optional; sent as `Authorization: Bearer` (openai style) or
+  `x-api-key` (anthropic style) only when present.
+- `headers` — optional extra headers merged on every call (`env:VAR`
+  supported), e.g. API keys some local servers expect.
+- Streaming, JSON mode, error mapping, and rate limiting behave exactly like
+  the named providers.
 
 ### OpenCode free tier — documented, opt-in, never bypassed
 
@@ -143,6 +192,20 @@ supply `x_opencode_session`** with a stable session id you already own:
 ```
 
 No session id? Don't use this adapter — use a real provider key.
+
+---
+
+## Command-line options
+
+While `run.bat` / `python -m carbonx_bridge` needs nothing, there are extras:
+
+```bash
+python -m carbonx_bridge                 # run (auto-creates config.json if needed)
+python -m carbonx_bridge --token mytoken # add a token without editing config.json
+python -m carbonx_bridge --port 9000     # different port
+python -m carbonx_bridge --host 0.0.0.0  # listen for other machines
+python -m carbonx_bridge --version
+```
 
 ---
 

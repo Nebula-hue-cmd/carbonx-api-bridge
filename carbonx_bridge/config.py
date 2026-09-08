@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_PATH = os.path.abspath(os.path.join(HERE, "..", "config.json"))
@@ -50,7 +51,15 @@ DEFAULT_CONFIG = {
     "providers": {},
 }
 
-VALID_PROVIDER_TYPES = ("openai", "anthropic", "openrouter", "opencode", "mock")
+VALID_PROVIDER_TYPES = (
+    "openai",
+    "anthropic",
+    "openrouter",
+    "opencode",
+    "custom",
+    "other",
+    "mock",
+)
 VALID_TIERS = ("admin", "premium", "free", "anon")
 
 
@@ -143,6 +152,89 @@ def load_config(path=None, env=None):
 #   import carbonx_bridge.config as config
 #   config.CONFIG["server"]["port"]
 CONFIG = None
+
+
+def make_default_config(token):
+    """A ready-to-run skeleton config, used when config.json is missing.
+
+    The only provider that works with zero edits is ``mock``, so the bridge
+    always starts. ``api_key`` fields are left empty for the user to fill;
+    editing one of the placeholders is the *only* manual step (or delete the
+    mock provider and set ``default_provider`` to the one you edited).
+    """
+    return {
+        "server": {
+            "host": "127.0.0.1",
+            "port": 8787,
+            "require_auth": True,
+            "allow_anon": False,
+        },
+        "auth": {
+            "tokens": {token: {"user": "you", "tier": "admin"}},
+            "rate_limits": {
+                "anon": {"rpm": 10, "rpd": 200},
+                "free": {"rpm": 30, "rpd": 1000},
+                "premium": {"rpm": 120, "rpd": 5000},
+                "admin": {"rpm": 1000, "rpd": 100000},
+            },
+        },
+        "limits": {
+            "max_body_bytes": 262144,
+            "max_prompt_chars": 8000,
+            "max_history_turns": 40,
+            "max_files": 5,
+            "max_file_bytes": 65536,
+            "max_docs_chars": 40000,
+            "max_response_tokens": 2048,
+        },
+        "default_provider": "mock",
+        "providers": {
+            "mock": {
+                "type": "mock",
+                "default_model": "mock/m1",
+                "reply": "This is the mock provider. Put a real API key in config.json and pick a provider to talk to a real model.",
+            },
+            "openai": {
+                "type": "openai",
+                "api_key": "",
+                "default_model": "gpt-4o-mini",
+            },
+            "claude": {
+                "type": "anthropic",
+                "api_key": "",
+                "default_model": "claude-3-5-sonnet-latest",
+            },
+            "openrouter": {
+                "type": "openrouter",
+                "api_key": "",
+                "default_model": "openai/gpt-4o-mini",
+            },
+            "cursor": {
+                "type": "custom",
+                "api_style": "anthropic",
+                "base_url": "http://localhost:3000",
+                "default_model": "cursor-fast",
+            },
+        },
+    }
+
+
+def ensure_config(path=None):
+    """Create config.json (with a fresh random admin token) if it is missing.
+
+    Returns ``(created, token)`` where ``token`` is the generated admin token
+    when a file was created (``None`` otherwise). Never overwrites an
+    existing file, and never writes secrets anywhere but the file itself.
+    """
+    path = path or DEFAULT_CONFIG_PATH
+    if os.path.exists(path):
+        return False, None
+    token = secrets.token_urlsafe(24)
+    cfg = make_default_config(token)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(cfg, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    return True, token
 
 
 def init(path=None, env=None):

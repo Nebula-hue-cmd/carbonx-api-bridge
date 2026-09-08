@@ -176,5 +176,83 @@ class TestOpenCodeRequiresSession(unittest.TestCase):
         self.assertEqual(p.session, "abc123")
 
 
+class FakeAnthropicHandler(CaptureHandler):
+    response = (
+        200,
+        {
+            "id": "msg_9",
+            "type": "message",
+            "role": "assistant",
+            "model": "cursor-fast",
+            "content": [{"type": "text", "text": "cursor says hi"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 2, "output_tokens": 3},
+        },
+    )
+
+
+class TestCustomProvider(unittest.TestCase):
+    """'custom'/'other' = bring-your-own endpoint (Cursor, local LLMs, ...)."""
+
+    def setUp(self):
+        CaptureHandler.requests = []
+        FakeAnthropicHandler.requests = []
+        self.up = FakeUpstream(CaptureHandler)
+        self.au = FakeUpstream(FakeAnthropicHandler)
+
+    def tearDown(self):
+        self.up.close()
+        self.au.close()
+
+    def test_openai_style_calls_chat_completions_on_base_url(self):
+        p = build_provider(
+            "local",
+            {"type": "custom", "api_style": "openai", "api_key": "k123", "base_url": self.up.url, "default_model": "m"},
+        )
+        out = p.chat({"messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(out["content"], "ok")
+        req = CaptureHandler.requests[-1]
+        self.assertTrue(req["path"].startswith("/chat/completions"))
+        hs = {k.lower(): v for k, v in req["headers"].items()}
+        self.assertTrue(hs.get("authorization", "").startswith("Bearer k123"))
+
+    def test_anthropic_style_speaks_messages_api(self):
+        p = build_provider(
+            "cursor",
+            {"type": "custom", "api_style": "anthropic", "api_key": "sk-ant-api03-abcdefghijklmnopqrstuv", "base_url": self.au.url, "default_model": "cursor-fast"},
+        )
+        out = p.chat({"messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(out["content"], "cursor says hi")
+        self.assertEqual(out["finish_reason"], "end_turn")
+        req = FakeAnthropicHandler.requests[-1]
+        self.assertTrue(req["path"].startswith("/v1/messages"))
+        hs = {k.lower(): v for k, v in req["headers"].items()}
+        self.assertEqual(hs.get("x-api-key"), "sk-ant-api03-abcdefghijklmnopqrstuv")
+        self.assertIn("max_tokens", req["body"])
+
+    def test_extra_headers_merged(self):
+        p = build_provider(
+            "local",
+            {"type": "other", "api_style": "openai", "base_url": self.up.url, "default_model": "m", "headers": {"X-Custom": "cookie", "Authorization": "Bearer deeply-custom"}},
+        )
+        p.chat({"messages": [{"role": "user", "content": "hi"}]})
+        req = CaptureHandler.requests[-1]
+        hs = {k.lower(): v for k, v in req["headers"].items()}
+        self.assertEqual(hs.get("x-custom"), "cookie")
+        self.assertEqual(hs.get("authorization"), "Bearer deeply-custom")
+
+    def test_requires_base_url(self):
+        with self.assertRaises(ConfigError):
+            build_provider("bad", {"type": "custom", "api_key": "k"})
+
+    def test_bad_api_style_rejected(self):
+        with self.assertRaises(ConfigError):
+            build_provider("bad", {"type": "custom", "api_style": "soap", "base_url": self.up.url})
+
+    def test_other_alias_builds_as_custom(self):
+        p = build_provider("x", {"type": "other", "api_style": "openai", "base_url": self.up.url, "default_model": "m"})
+        self.assertEqual(p.kind, "custom")
+
+
 if __name__ == "__main__":
     unittest.main()
