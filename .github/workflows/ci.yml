@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Redaction smoke (working tree)
+        shell: bash
+        run: |
+          if git grep -nE 'sk-[A-Za-z0-9]{12,}|ghp_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}' -- . ':!CHANGELOG.md' 2>/dev/null; then
+            echo "::error::secret-like token found in tracked files"
+            exit 1
+          fi
+          echo "secret scan: clean"

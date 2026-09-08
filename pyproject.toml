@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carbonx-api-bridge"
+version = "1.0.0"
+description = "BYOK, provider-abstraction HTTP API bridge (OpenAI / Anthropic / OpenRouter / OpenCode) with server-side auth, tiered rate limits, request caps, and secret redaction."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["llm", "bridge", "api", "byok", "openai", "anthropic", "openrouter", "lumen"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.scripts]
+carbonx-bridge = "carbonx_bridge.server:main"
+
+[tool.setuptools.packages.find]
+include = ["carbonx_bridge*"]

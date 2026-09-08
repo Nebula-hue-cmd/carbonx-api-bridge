@@ -1,0 +1,21 @@
+# Secrets and local state - never commit these
+config.json
+.env
+*.key
+*.pem
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Test/coverage noise
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS noise
+Thumbs.db
+.DS_Store

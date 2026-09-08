@@ -1,0 +1,56 @@
+{
+    "server": {
+        "host": "127.0.0.1",
+        "port": 8787,
+        "require_auth": true,
+        "allow_anon": false
+    },
+    "auth": {
+        "tokens": {
+            "SET-A-LONG-RANDOM-TOKEN": { "user": "you", "tier": "admin" }
+        },
+        "rate_limits": {
+            "anon": { "rpm": 10, "rpd": 200 },
+            "free": { "rpm": 30, "rpd": 1000 },
+            "premium": { "rpm": 120, "rpd": 5000 },
+            "admin": { "rpm": 1000, "rpd": 100000 }
+        }
+    },
+    "limits": {
+        "max_body_bytes": 262144,
+        "max_prompt_chars": 8000,
+        "max_history_turns": 40,
+        "max_files": 5,
+        "max_file_bytes": 65536,
+        "max_docs_chars": 40000,
+        "max_response_tokens": 2048
+    },
+    "default_provider": "openai",
+    "providers": {
+        "openai": {
+            "type": "openai",
+            "api_key": "env:OPENAI_API_KEY",
+            "default_model": "gpt-4o-mini"
+        },
+        "claude": {
+            "type": "anthropic",
+            "api_key": "env:ANTHROPIC_API_KEY",
+            "default_model": "claude-3-5-sonnet-latest"
+        },
+        "openrouter": {
+            "type": "openrouter",
+            "api_key": "env:OPENROUTER_API_KEY",
+            "default_model": "openai/gpt-4o-mini",
+            "headers": {
+                "HTTP-Referer": "https://example.com",
+                "X-Title": "carbonx-api-bridge"
+            }
+        },
+        "ollama": {
+            "type": "openai",
+            "base_url": "http://localhost:11434/v1",
+            "api_key": "ollama",
+            "default_model": "qwen3.5:4b"
+        }
+    }
+}
