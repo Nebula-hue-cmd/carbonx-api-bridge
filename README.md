@@ -19,12 +19,21 @@ Windows.
 
 ## Quick start
 
+**Option A — no Python needed (recommended for everyone else):**
+
+1. Download the latest `carbonx-bridge.exe` from the
+   [Releases](../../releases) page and put it in any folder.
+2. **Double-click `carbonx-bridge.exe`.**
+
+**Option B — from source:**
+
 1. Install Python 3.10+ from https://python.org (tick *"Add python.exe to PATH"*).
 2. Download this project and extract it.
 3. **Double-click `run.bat`.**
 
-The bridge writes `config.json` if needed, prints the access token, and starts
-on the mock provider so it works immediately.
+The bridge writes `config.json` if needed (next to the `.exe`, or in the
+project folder when run from source), prints the access token, and starts on
+the mock provider so it works immediately.
 
 ### Using a real model
 
@@ -48,15 +57,36 @@ edit `config.json` by hand:
 2. Open `http://localhost:8787/` (the panel is loopback-only, so it only
    listens on the machine running the bridge).
 3. From the panel you can:
-   - **Copy your access token** (or generate new ones for each user).
+   - **Copy your access token** (or generate new tokens for each user, and
+     **delete** stale ones — the last remaining token can't be deleted).
    - **Paste API keys** into providers, switch the default provider, change a
      base URL or model. Click *Save & apply* — changes take effect
      immediately, no restart.
+   - **Try it now** — send a test message straight from the panel to confirm
+     a provider key works before you leave the page.
+   - Pick a **theme** (Midnight, Light, Ocean, Forest, Sunset) — remembers your
+     choice next time.
    - Keys are never shown again after saving; the panel only reports whether a
      key is set.
 
 If the bridge prints `http://localhost:8787/`, just open it while the bridge
 is running. There is no separate install — the panel is part of the bridge.
+
+---
+
+## Portable .exe (no Python)
+
+`carbonx-bridge.exe` is a single ~9 MB file built with PyInstaller:
+
+- **No Python, no downloads, nothing else to install.** Double-click and go.
+- On first run it creates `config.json` **next to itself**, so you can keep
+  the whole folder or zip it up and hand it to someone (they get *their own*
+  random access token on first run).
+- Built from source with `build.bat` (installs PyInstaller into a throwaway
+  `.venv-build` folder). CI also builds it on every `v*` tag and attaches the
+  `.exe` to the GitHub Release.
+- Works the same as the source version: control panel, mock provider, `--port`,
+  `--open`, everything above.
 
 ---
 
