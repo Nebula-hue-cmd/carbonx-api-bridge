@@ -20,6 +20,7 @@ import os
 import re
 import secrets
 import sys
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -39,7 +40,7 @@ from .providers import build_all, pick
 from .redact import redact
 from .streaming import done, error_chunk, stream_provider_events
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 QUIET_ENDPOINTS = {"/v1/stream"}
 
@@ -75,6 +76,9 @@ _ALLOWED_PROVIDER_FIELDS = frozenset(
     }
 )
 
+#: Server-wide settings the panel may write through /ui/config.
+_ALLOWED_SERVER_FIELDS = frozenset({"system_prompt"})
+
 
 class App:
     """Tiny composition root so tests can build an instance easily."""
@@ -85,8 +89,140 @@ class App:
         self.validator = Validator(cfg["limits"])
         self.providers = build_all(cfg["providers"])
         self.default_provider = cfg["default_provider"]
+        self.system_prompt = (cfg["server"].get("system_prompt") or "").strip() or None
+        #: Snapshot of the user's game pushed by the Lumen executor via
+        #: ``POST /v1/game-context`` (game, players, decompiled files).
+        self.game_ctx = None
 
     # ---- request handling ---------------------------------------------
+    def _inject_context(self, params):
+        """Layer the bridge identity prompt and any game snapshot on top of
+        what the client sent.
+
+        Order of precedence: the client's own top-level ``system`` (or an
+        existing system-role message) always wins as the lead; the configured
+        identity prompt fills in when the client sent none; the game snapshot
+        is appended so the model can answer questions about the game, its
+        players and its files. Providers fold the result into a single
+        leading system message via ``clean_messages``.
+        """
+        system = (params.get("system") or "").strip()
+        if not system:
+            system = self.system_prompt or ""
+        ctx = self._build_game_context()
+        if ctx:
+            system = (system + "\n\n" + ctx) if system else ctx
+        if system:
+            params["system"] = system
+        return params
+
+    def _build_game_context(self):
+        """Render the stored Lumen game snapshot as model-facing context."""
+        c = self.game_ctx or {}
+        out = []
+        if c.get("game") or c.get("players") or c.get("files"):
+            out.append("Real-time game context attached by the Lumen executor running for you:")
+            if c.get("game"):
+                out.append("Game: %s" % c["game"])
+        players = c.get("players") or []
+        if players:
+            rows = []
+            for p in players:
+                name = p.get("name") or p.get("display_name") or "?"
+                parts = [name]
+                if p.get("display_name") and p["display_name"] != name:
+                    parts.append("(display: %s)" % p["display_name"])
+                if p.get("user_id"):
+                    parts.append("userId=%s" % p["user_id"])
+                if p.get("team"):
+                    parts.append("team=%s" % p["team"])
+                rows.append("- " + " ".join(parts))
+            out.append("Players (%d):\n%s" % (len(players), "\n".join(rows)))
+        files = c.get("files") or []
+        if files:
+            out.append(
+                "Game files (%d) - the decompiled scripts/instances in the user's game. "
+                "Read these before answering questions about the game, its mechanics, or "
+                "before writing code for it:" % len(files)
+            )
+            for f in files:
+                out.append("=== %s ===" % (f.get("path") or f.get("name") or "?"))
+                out.append(f.get("content") or "")
+        return "\n".join(out) if out else ""
+
+    def _set_game_context(self, payload):
+        """Validate and store a Lumen game snapshot (see README)."""
+        if payload is None or not isinstance(payload, dict):
+            raise BadRequest("body must be a JSON object")
+        players = payload.get("players") or []
+        files = payload.get("files") or []
+        if not isinstance(players, list):
+            raise BadRequest("'players' must be an array")
+        if not isinstance(files, list):
+            raise BadRequest("'files' must be an array")
+        max_files = self.validator._max("max_game_files", 40)
+        max_chars = self.validator._max("max_game_chars", 60000)
+        if len(files) > max_files:
+            from .errors import PayloadTooLarge
+
+            raise PayloadTooLarge(
+                "game context has %d files; limit is %d" % (len(files), max_files),
+            )
+
+        def clip(value, limit):
+            value = str(value or "")
+            return value[:limit]
+
+        clean_players = []
+        for p in players[:50]:
+            if not isinstance(p, dict):
+                continue
+            clean_players.append(
+                {
+                    "name": clip(p.get("name"), 120),
+                    "display_name": clip(p.get("display_name"), 120),
+                    "user_id": str(clip(p.get("user_id"), 40)),
+                    "team": clip(p.get("team"), 120),
+                }
+            )
+
+        budget = max_chars
+        truncated = 0
+        clean_files = []
+        for f in files:
+            path = clip(f.get("path") or f.get("name") or "?", 400) if isinstance(f, dict) else "?"
+            content = ""
+            if isinstance(f, dict):
+                content = str(f.get("content") or "")
+            if budget <= 0:
+                truncated += 1
+                continue
+            if len(content) > budget:
+                content = content[:budget] + "\n[truncated]"
+                truncated += 1
+            budget -= len(content)
+            clean_files.append({"path": path, "content": content})
+
+        self.game_ctx = {
+            "game": clip(payload.get("game"), 200),
+            "players": clean_players,
+            "files": clean_files,
+            "chars": sum(len(f.get("content") or "") for f in clean_files),
+            "at": time.time(),
+        }
+        return {
+            "ok": True,
+            "game": self.game_ctx["game"],
+            "players": len(clean_players),
+            "files": len(clean_files),
+            "characters": self.game_ctx["chars"],
+            "truncated_files": truncated,
+        }
+
+    def _clear_game_context(self):
+        self.game_ctx = None
+        return {"ok": True, "cleared": True}
+
     def handle_chat(self, body: bytes, auth_header, remote_ip):
         auth = self.authenticator.authenticate(auth_header, remote_ip)
         self.authenticator.check_rate(auth, remote_ip)
@@ -94,7 +230,7 @@ class App:
         payload = parse_json(body)
         self.validator.validate_chat_payload(payload)
         provider = pick(self.providers, payload.get("provider"), self.default_provider)
-        params = normalize_params(self.validator, payload)
+        params = self._inject_context(normalize_params(self.validator, payload))
         try:
             result = provider.chat(params)
         except ApiError:
@@ -128,7 +264,7 @@ class App:
             raise StreamingUnsupported(
                 "provider '%s' does not support streaming; use /v1/chat" % (provider.name,)
             )
-        return provider, normalize_params(self.validator, payload)
+        return provider, self._inject_context(normalize_params(self.validator, payload))
 
     def run_stream(self, provider, params, writer):
         try:
@@ -210,6 +346,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._ui_tokens()
             if path == "/ui/config":
                 return self._ui_config()
+            if path == "/ui/game-context":
+                return self._ui_game_context()
             raise NotFound()
         except ApiError as ex:
             self._error(ex)
@@ -223,6 +361,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._chat()
             if path == "/v1/stream":
                 return self._stream()
+            if path == "/v1/game-context":
+                return self._v1_game_context()
             if path == "/ui/token":
                 return self._ui_new_token()
             if path == "/ui/config":
@@ -230,6 +370,19 @@ class Handler(BaseHTTPRequestHandler):
             raise NotFound()
         except StopStreaming:
             return
+        except ApiError as ex:
+            self._error(ex)
+        except Exception as ex:  # noqa: BLE001
+            self._error(_internal(ex))
+
+    def do_DELETE(self):
+        path = self.path.split("?")[0]
+        try:
+            if path == "/v1/game-context":
+                return self._v1_game_context_clear()
+            if path == "/ui/game-context":
+                return self._ui_game_context_clear()
+            raise NotFound()
         except ApiError as ex:
             self._error(ex)
         except Exception as ex:  # noqa: BLE001
@@ -344,6 +497,14 @@ class Handler(BaseHTTPRequestHandler):
             np = patch.get("default_provider")
             if np and isinstance(np, str) and np.strip():
                 data["default_provider"] = np.strip()
+            server_patch = patch.get("server")
+            if server_patch is not None:
+                if not isinstance(server_patch, dict):
+                    raise ValueError("server must be an object")
+                for key, value in server_patch.items():
+                    if key not in _ALLOWED_SERVER_FIELDS:
+                        continue
+                    data.setdefault("server", {})[key] = str(value or "").strip()
             providers_patch = patch.get("providers") or {}
             if not isinstance(providers_patch, dict):
                 raise ValueError("providers must be an object")
@@ -410,6 +571,41 @@ class Handler(BaseHTTPRequestHandler):
         body = self._route()
         result = self.app.handle_chat(body, self.headers.get("Authorization"), self.client_address[0])
         self._send_json(200, result)
+
+    def _v1_game_context(self):
+        body = self._route()
+        auth = self.app.authenticator.authenticate(self.headers.get("Authorization"), self.client_address[0])
+        self.app.authenticator.check_rate(auth, self.client_address[0])
+        self.app.validator.check_body_size(body)
+        payload = parse_json(body)
+        result = self.app._set_game_context(payload)
+        self._send_json(200, result)
+
+    def _v1_game_context_clear(self):
+        auth = self.app.authenticator.authenticate(self.headers.get("Authorization"), self.client_address[0])
+        self.app.authenticator.check_rate(auth, self.client_address[0])
+        self._send_json(200, self.app._clear_game_context())
+
+    def _ui_game_context(self):
+        self._guard_admin_surface()
+        c = self.app.game_ctx
+        if not c:
+            self._send_json(200, {"attached": False})
+            return
+        self._send_json(
+            200,
+            {
+                "attached": True,
+                "game": c.get("game"),
+                "players": len(c.get("players") or []),
+                "files": len(c.get("files") or []),
+                "characters": c.get("chars", 0),
+            },
+        )
+
+    def _ui_game_context_clear(self):
+        self._guard_admin_surface()
+        self._send_json(200, self.app._clear_game_context())
 
     def _stream(self):
         body = self._route()
@@ -483,6 +679,12 @@ def _ui_config_view(cfg):
             "port": cfg["server"].get("port"),
             "require_auth": bool(cfg["server"].get("require_auth", True)),
         },
+        "system_prompt": cfg["server"].get("system_prompt") or "",
+        "system_prompt_default": cfg_mod.DEFAULT_SYSTEM_PROMPT,
+        "system_prompt_custom": bool(
+            cfg["server"].get("system_prompt")
+            and cfg["server"].get("system_prompt") != cfg_mod.DEFAULT_SYSTEM_PROMPT
+        ),
     }
 
 
@@ -520,6 +722,7 @@ def _swap_app(handler, cfg):
     """Hot-swap the running App (and global CONFIG) without a restart."""
     app = App(cfg)
     app.config_path = handler.app.config_path
+    app.game_ctx = handler.app.game_ctx  # the live game snapshot is runtime state, not config
     Handler.app = app
     cfg_mod.CONFIG = cfg
 

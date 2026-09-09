@@ -62,10 +62,15 @@ edit `config.json` by hand:
    - **Paste API keys** into providers, switch the default provider, change a
      base URL or model. Click *Save & apply* — changes take effect
      immediately, no restart.
-   - **Try it now** — send a test message straight from the panel to confirm
-     a provider key works (provider-side errors are shown as toasts so you
-     know exactly what failed). It uses the default provider's configured
-     model, so no provider/model arguments can get confused.
+   - **Chat like ChatGPT** — a multi-turn chat panel that streams from the
+     default provider, remembers the conversation while the page is open
+     (scroll back through it), and keeps a tidy plain-text look. New chat
+     clears the history; *New chat* is always one click away. Provider-side
+     errors are shown as toasts so you know exactly what failed.
+   - **Assistant identity** — the system prompt sent to the model with every
+     message. It tells the AI what the bridge is and who Lumen is, and to
+     answer in clean plain text instead of raw markdown. Edit it, reset to the
+     built-in default, or blank it out to disable.
    - **Add provider** — plug in your own models without ever touching JSON.
      Presets fill in Ollama (`http://localhost:11434/v1`), LM Studio
      (`http://localhost:1234/v1`), OpenRouter, OpenCode, OpenAI, Anthropic, or
@@ -109,6 +114,8 @@ is running. There is no separate install — the panel is part of the bridge.
 | `GET /v1/models` | yes | `{"objects": [{"provider", "model", "supports_streaming", ...}]}` |
 | `POST /v1/chat` | yes | Non-streaming response: `{"id","provider","model","content","usage","finish_reason"}` |
 | `POST /v1/stream` | yes | `text/event-stream` (see below). |
+| `POST /v1/game-context` | yes | Give the AI a live Lumen snapshot of the user's game (game name, players, decompiled files), attached to every chat. |
+| `DELETE /v1/game-context` | yes | Forget the attached snapshot. |
 
 `Authorization: Bearer <token>` maps to a configured user + tier. Client
 supplied user/role/plan fields are ignored.
@@ -155,6 +162,62 @@ data: [DONE]
 
 Mid-stream errors emit a `data: {"type":"error","error":{...}}` event before
 `[DONE]`.
+
+### Assistant identity (system prompt)
+
+Every chat (and stream) request gets a system prompt that tells the AI what
+the bridge is, who Lumen is, and to answer in clean plain text — no `**`, no
+markdown tables. Configure it in `config.json`:
+
+```json
+"server": { "system_prompt": "Your custom identity text..." }
+```
+
+Leave the key present but empty to disable injection entirely. Precedence per
+request: the **client's own** `system` (or a leading system-role message) wins
+over the configured default, and the Lumen game snapshot (if any) is appended
+after whichever prompt is used. The panel also exposes this under *Assistant
+identity* with a reset-to-default button.
+
+---
+
+## Game context (Lumen)
+
+The bridge has no live connection to Roblox, so the Lumen executor pushes a
+snapshot of what the user is doing and the bridge attaches it to every chat.
+With a snapshot attached the AI can answer *"what game am I in"*, *"list the
+players"*, and read the decompiled game files *before* writing or explaining
+anything about the game's code.
+
+Push from a Lumen script (any recent universe/player data + decompiled scripts
+you've read out — a handful of representative files is plenty):
+
+```lua
+local request = request -- Lumen's HTTP request (see getlumen.net/docs)
+
+request({
+  Url = "http://127.0.0.1:8787/v1/game-context",
+  Method = "POST",
+  Headers = {
+    ["Content-Type"] = "application/json",
+    Authorization = "Bearer " .. MY_ACCESS_TOKEN,
+  },
+  Body = __gameJSON, -- { "game": "...", "players": [ {...} ], "files": [ { "path": "...", "content": "..." } ] }
+})
+```
+
+The snapshot lives **in memory only** — it is never written to disk — and is
+dropped on restart. The panel shows a *"Game context attached"* pill while one
+is loaded (with a *Forget game context* button). Limits:
+
+| Key | Default | Behavior |
+|---|---|---|
+| `max_game_files` | 40 | more files → `413 payload_too_large` |
+| `max_game_chars` | 60000 | total content budget; later files are truncated (and reported in the POST response as `truncated_files`) |
+
+Send nothing to `/v1/chat` about the game and the model simply won't know it.
+Clearing the context (DELETE, panel button, or restart) is enough to stop it
+from being injected.
 
 ---
 
@@ -282,6 +345,8 @@ python -m carbonx_bridge --version
 | `max_file_bytes` | 65536 (per file) | 400 |
 | `max_docs_chars` | 40000 | 400 |
 | `max_response_tokens` | 2048 | server-side clamp |
+| `max_game_files` | 40 | game context: 413 |
+| `max_game_chars` | 60000 | game context: truncate |
 
 `files`/`docs` are validated but not ingested in v1 — they pass through as
 context hints to the provider.

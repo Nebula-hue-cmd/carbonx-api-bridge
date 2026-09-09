@@ -111,7 +111,7 @@ try {
   };
 
   const statusText = await step("wait for statusline", () => wait(`(()=>{const e=document.getElementById('statustext');return e&&e.textContent.trim()!=='…'?e.textContent.trim():null;})()`));
-  check("page boots + /health loads (statusline populated)", !!statusText && /v1\.3\.0/.test(statusText), statusText);
+  check("page boots + /health loads (statusline populated)", !!statusText && /v1\.4\.0/.test(statusText), statusText);
   check("no script errors during boot", (await evalJS("window.__errs && window.__errs.length")) === 0);
 
   const toks = await step("wait for token rows", () => wait(`document.querySelectorAll('.tok').length >= 1`));
@@ -133,15 +133,59 @@ try {
   const tokCount1 = await evalJS("document.querySelectorAll('.tok').length");
   check("token list grew by one", tokCount1 >= 2, "count=" + tokCount1);
 
-  await evalJS(`document.getElementById('try').value = 'is this real?';`);
-  await evalJS("document.getElementById('trysend').click()");
-  const result = await wait(`document.getElementById('triesult').textContent || ''`, 8000);
-  check("Try-it-now returns the mock reply", /mock/.test(result), result.slice(0, 90));
-
-  await evalJS(`(()=>{const sel=document.getElementById('default'); sel.value='mock';})()`);
-  await evalJS("document.getElementById('save').click()");
-  await sleep(1200);
+  // ---- pin default provider to mock BEFORE chatting (deterministic stream) ----
+  await step("pin default provider to mock", async () => {
+    await evalJS(`(()=>{const sel=document.getElementById('default'); sel.value='mock';})()`);
+    await evalJS("document.getElementById('save').click()");
+    await sleep(1200);
+  });
   check("Save & apply shows a success toast", /Saved/.test(await evalJS("(document.querySelector('#toasts .toast:last-child')||{}).textContent || ''")));
+
+  // ---- multi-turn chat ----
+  const chatBoot = await step("wait for chat welcome bubble", () => wait(`document.querySelector('#chat .msg') && document.querySelector('#chat .msg').textContent.indexOf('Ask me anything') >= 0`));
+  check("chat renders a welcome bubble", !!chatBoot);
+
+  await evalJS(`document.getElementById('chatinput').value = 'is this real?';`);
+  await evalJS("document.getElementById('chatsend').click()");
+  const aiBubble = await wait(`(()=>{const m=[...document.querySelectorAll('#chat .msg.ai')].pop();return m&&!m.classList.contains('streaming')?m.textContent:null;})()`, 12000);
+  check("chat sends + streams the mock reply into a bubble", /mock/.test(aiBubble || ""), (aiBubble || "").slice(0, 90));
+  const historyCount = await evalJS("document.querySelectorAll('#chat .msg').length");
+  check("user + assistant bubbles both kept in history", historyCount >= 2, "msgs=" + historyCount);
+
+  await evalJS(`document.getElementById('chatinput').value = 'second message';`);
+  await evalJS("document.getElementById('chatsend').click()");
+  await wait(`(()=>{const m=[...document.querySelectorAll('#chat .msg.ai')].pop();return m&&!m.classList.contains('streaming')?m.textContent:null;})()`, 12000);
+  const historyAfter = await evalJS("document.querySelectorAll('#chat .msg').length");
+  check("second turn extends the same history", historyAfter >= historyCount + 2, "msgs=" + historyAfter);
+
+  await evalJS("document.getElementById('chatnew').click()");
+  await sleep(200);
+  const afterNew = await evalJS("document.querySelectorAll('#chat .msg').length");
+  check("New chat clears the conversation", afterNew === 1, "msgs=" + afterNew);
+
+  // ---- assistant identity (system prompt) ----
+  const sysTag = await step("wait for identity tag", () => wait(`document.getElementById('systag').textContent`));
+  check("identity tag rendered (default prompt active)", sysTag.includes("custom") === false && sysTag.length > 0, String(sysTag).trim());
+  await evalJS(`document.getElementById('sysprompt').value = 'PANEL CUSTOM PROMPT';`);
+  await evalJS("document.getElementById('syssave').click()");
+  const sysSaved = await wait(`document.getElementById('systag').textContent.indexOf('custom') >= 0`, 8000);
+  check("saving identity prompt flips tag to custom - active", !!sysSaved);
+  const sysPersist = await evalJS(`fetch('/ui/config').then(r=>r.json()).then(d=>d.system_prompt)`);
+  check("custom prompt persisted via /ui/config", sysPersist === "PANEL CUSTOM PROMPT", sysPersist);
+  await evalJS("document.getElementById('sysreset').click()");
+  await wait(`document.getElementById('systag').textContent.indexOf('custom') < 0`, 8000);
+  check("reset restores the built-in default prompt", (await evalJS("document.getElementById('systag').textContent")).includes("custom") === false);
+
+  // ---- game context row ----
+  const noCtx = await evalJS("document.getElementById('gctxrow').hidden");
+  check("no game context pill before any push", noCtx === true);
+  const pushOk = await evalJS(`(async()=>{const t=await fetch('/ui/token').then(r=>r.json());const tok=t.tokens[0].token;const r=await fetch('/v1/game-context',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({game:'Adopt Me!',players:[{name:'Alice'},{name:'Bob'}],files:[{path:'workspace/Main',content:'local g = game'}]})});return r.ok;})()`);
+  check("pushing game context via /v1/game-context succeeds", pushOk === true);
+  const gctxShown = await step("game context pill appears", () => wait(`(()=>{const e=document.getElementById('gctxrow');return !e.hidden?document.getElementById('gctxinfo').textContent:null;})()`, 10000));
+  check("game context pill shows attached summary", /Adopt Me!/.test(gctxShown || "") && /players/.test(gctxShown), gctxShown);
+  await evalJS("document.getElementById('gctxclear').click()");
+  const gctxGone = await wait(`document.getElementById('gctxrow').hidden === true`, 8000);
+  check("Forget game context hides the pill", gctxGone === true);
 
   // ---- add a provider through the panel UI (Ollama preset) ----
   const ollamaAlready = await evalJS(`!!CONFIG.providers.ollama`);

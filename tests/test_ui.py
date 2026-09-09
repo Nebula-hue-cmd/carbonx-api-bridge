@@ -434,5 +434,62 @@ class TestConfigEditor(unittest.TestCase):
             tmp.cleanup()
 
 
+class TestSystemPromptPanel(unittest.TestCase):
+    def test_view_reports_prompt_state(self):
+        server, tmp = _make_ui_server({"server": {"system_prompt": "CUSTOM IDENTITY"}})
+        try:
+            status, view = server.json("/ui/config")
+            self.assertEqual(status, 200)
+            self.assertEqual(view["system_prompt"], "CUSTOM IDENTITY")
+            self.assertEqual(view["system_prompt_default"], cfg_mod.DEFAULT_SYSTEM_PROMPT)
+            self.assertTrue(view["system_prompt_custom"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_save_system_prompt_persists_and_reinjects(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json("/ui/config", body={"server": {"system_prompt": "MY NEW PROMPT"}})
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+            with open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.assertEqual(data["server"]["system_prompt"], "MY NEW PROMPT")
+            status, view = server.json("/ui/config")
+            self.assertEqual(status, 200)
+            self.assertEqual(view["system_prompt"], "MY NEW PROMPT")
+            self.assertTrue(view["system_prompt_custom"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_empty_system_prompt_disables_injection(self):
+        server, tmp = _make_ui_server({"server": {"system_prompt": "SOMETHING"}})
+        try:
+            status, body = server.json("/ui/config", body={"server": {"system_prompt": ""}})
+            self.assertEqual(status, 200)
+            status, view = server.json("/ui/config")
+            self.assertEqual(view["system_prompt"], "")
+            self.assertFalse(view["system_prompt_custom"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_unknown_server_fields_ignored(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json("/ui/config", body={"server": {"host": "0.0.0.0", "port": 1337, "system_prompt": "X"}})
+            self.assertEqual(status, 200)
+            with open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.assertEqual(data["server"]["host"], "127.0.0.1")
+            self.assertEqual(data["server"].get("port"), 0)
+            self.assertEqual(data["server"]["system_prompt"], "X")
+        finally:
+            server.close()
+            tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

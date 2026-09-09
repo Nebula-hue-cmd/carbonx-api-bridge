@@ -130,5 +130,58 @@ class TestAnonTier(unittest.TestCase):
             srv.close()
 
 
+class TestGameContext(BridgeTest):
+    def _payload(self):
+        return {
+            "game": "Adopt Me!",
+            "players": [{"name": "Alice", "user_id": "123", "team": "Red"}, {"name": "Bob", "display_name": "Bobby"}],
+            "files": [{"path": "workspace/Main", "name": "Main", "content": "local Players = game:GetService('Players')"}],
+        }
+
+    def test_requires_auth(self):
+        status, data = self.server.json("/v1/game-context", body=self._payload())
+        self.assertEqual(status, 401)
+        status, data = self.server.json("/v1/game-context", method="DELETE")
+        self.assertEqual(status, 401)
+
+    def test_set_get_clear_lifecycle(self):
+        status, data = self.server.json("/v1/game-context", body=self._payload(), token=self.token_admin)
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["game"], "Adopt Me!")
+        self.assertEqual(data["players"], 2)
+        self.assertEqual(data["files"], 1)
+
+        status, view = self.server.json("/ui/game-context")
+        self.assertEqual(status, 200)
+        self.assertTrue(view["attached"])
+        self.assertEqual(view["game"], "Adopt Me!")
+        self.assertEqual(view["files"], 1)
+        self.assertEqual(view["players"], 2)
+
+        status, _ = self.server.json("/v1/game-context", method="DELETE", token=self.token_admin)
+        self.assertEqual(status, 200)
+        status, view = self.server.json("/ui/game-context")
+        self.assertEqual(status, 200)
+        self.assertFalse(view["attached"])
+
+    def test_panel_clear(self):
+        self.server.json("/v1/game-context", body=self._payload(), token=self.token_admin)
+        status, _ = self.server.json("/ui/game-context", method="DELETE")
+        self.assertEqual(status, 200)
+        _, view = self.server.json("/ui/game-context")
+        self.assertFalse(view["attached"])
+
+    def test_oversized_files_413(self):
+        files = [{"path": "f%d" % i, "content": "x"} for i in range(60)]
+        status, data = self.server.json("/v1/game-context", body={"game": "g", "files": files}, token=self.token_admin)
+        self.assertEqual(status, 413)
+        self.assertEqual(data["error"]["type"], "payload_too_large")
+
+    def test_bad_body_400(self):
+        status, data = self.server.json("/v1/game-context", body={"files": "nope"}, token=self.token_admin)
+        self.assertEqual(status, 400)
+
+
 if __name__ == "__main__":
     unittest.main()
