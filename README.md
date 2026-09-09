@@ -243,7 +243,11 @@ python -m carbonx_bridge --version
   (`Sec-Fetch-Site`, `Origin`). This blocks the classic attacks against an
   unauthenticated local panel: a malicious website **can't** read or click it
   via CSRF, and a rebinding domain that resolves to `127.0.0.1` gets a 403.
-  Keys written through the panel are never returned or logged. The `/v1/*` API
+  Locally installed browser add-ons (AI assistants like Merlin) are tolerated —
+  their `chrome-extension://…`-style `Origin` can only be produced by an
+  installed extension, never by a remote page — so they keep working without
+  re-opening the surface to the internet. Keys written through the panel are
+  never returned or logged. The `/v1/*` API
   intentionally stays open to non-loopback clients (LAN Lumen instances) — so
   only the *admin* surface is locked down, and `--host 0.0.0.0` remains safe
   for sharing the API, not the panel.

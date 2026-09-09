@@ -41,6 +41,20 @@ __version__ = "1.3.0"
 
 QUIET_ENDPOINTS = {"/v1/stream"}
 
+# Origin schemes that only a locally installed browser add-on can produce
+# (forbidden header names, so remote pages can't forge them). The add-on reads
+# the panel's DOM anyway via content scripts, so tolerating it on the admin
+# surface costs no security while keeping extensions like Merlin working.
+_EXTENSION_SCHEMES = frozenset(
+    {
+        "chrome-extension",  # Chrome / Edge
+        "edge-extension",
+        "ms-browser-extension",  # Edge (legacy)
+        "moz-extension",  # Firefox
+        "safari-web-extension",  # Safari
+    }
+)
+
 
 class App:
     """Tiny composition root so tests can build an instance easily."""
@@ -215,17 +229,28 @@ class Handler(BaseHTTPRequestHandler):
           reads the panel same-origin).
         * If the browser tells us how it navigated (Sec-Fetch-Site / Origin),
           it must be us (or a top-level navigation), not a cross-site page.
+        * Locally installed browser add-ons (Merlin and friends) issue their
+          own cross-site requests with an ``Origin`` of ``chrome-extension://``
+          & co. Those origins can only be produced by an installed extension
+          process -- a remote page cannot set the ``Origin`` header -- and they
+          already read the panel's DOM through content scripts anyway, so they
+          are tolerated. Everything else cross-site stays blocked.
         """
         if not ui.host_is_loopback(self.headers.get("Host")):
             raise Forbidden("control panel only answers to localhost hostnames")
+        if not ui.is_loopback(self.client_address[0]):
+            raise Forbidden("the control panel is loopback-only (must run on this machine)")
+        origin = self.headers.get("Origin")
+        if origin:
+            scheme, _, rest = origin.lower().partition("://")
+            host = rest.split("/", 1)[0]
+            if scheme in _EXTENSION_SCHEMES and host:
+                return  # local browser add-on, not an attacker site
+            if not ui.host_is_loopback(host):
+                raise Forbidden("cross-origin request blocked")
         fetch_site = self.headers.get("Sec-Fetch-Site")
         if fetch_site and fetch_site.lower() not in ("same-origin", "none"):
             raise Forbidden("cross-site request blocked")
-        origin = self.headers.get("Origin")
-        if origin and not ui.host_is_loopback(origin.split("://", 1)[-1].split("/", 1)[0]):
-            raise Forbidden("cross-origin request blocked")
-        if not ui.is_loopback(self.client_address[0]):
-            raise Forbidden("the control panel is loopback-only (must run on this machine)")
 
     def _ui_page(self):
         self._guard_admin_surface()

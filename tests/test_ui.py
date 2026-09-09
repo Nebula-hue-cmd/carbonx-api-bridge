@@ -77,6 +77,39 @@ class TestAdminSurfaceGuards(unittest.TestCase):
             server.close()
             tmp.cleanup()
 
+    def test_local_extension_origins_tolerated(self):
+        # Installed add-ons (Merlin etc.) can only navigate the panel with an
+        # extension scheme Origin -- forgeable by nobody but an installed
+        # extension process -- so those are let through even when the browser
+        # labels them cross-site. Real remote origins stay blocked.
+        server, tmp = _make_ui_server()
+        try:
+            host = "127.0.0.1:%d" % server.server.server_address[1]
+            for origin in (
+                "chrome-extension://abcdefghijklmnop",
+                "edge-extension://abcdefghijklmnop",
+                "ms-browser-extension://abcdefghijklmnop",
+                "moz-extension://abcdefghijklmnop",
+                "safari-web-extension://abcdefghijklmnop",
+            ):
+                status, _, _ = _raw_request(
+                    server,
+                    "GET",
+                    "/ui/token",
+                    {"Host": host, "Origin": origin, "Sec-Fetch-Site": "cross-site"},
+                )
+                self.assertEqual(status, 200, origin)
+            status, _, _ = _raw_request(
+                server, "GET", "/ui/token",
+                {"Host": host, "Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"},
+            )
+            self.assertEqual(status, 403)
+            status, _, _ = _raw_request(server, "GET", "/ui/token", {"Host": host, "Sec-Fetch-Site": "cross-site"})
+            self.assertEqual(status, 403)
+        finally:
+            server.close()
+            tmp.cleanup()
+
     def test_api_surface_not_host_gated(self):
         # LAN clients on /v1/* keep working; only the admin surface is rebound-locked
         server, tmp = _make_ui_server()
