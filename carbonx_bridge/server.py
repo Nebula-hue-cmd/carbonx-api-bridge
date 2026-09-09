@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import sys
 import uuid
@@ -28,6 +29,7 @@ from .auth import Authenticator
 from .errors import (
     ApiError,
     BadRequest,
+    ConfigError,
     Forbidden,
     NotFound,
     UpstreamError,
@@ -52,6 +54,24 @@ _EXTENSION_SCHEMES = frozenset(
         "ms-browser-extension",  # Edge (legacy)
         "moz-extension",  # Firefox
         "safari-web-extension",  # Safari
+    }
+)
+
+_PROVIDER_NAME_RE = re.compile(r"^[a-z0-9_\-]{1,32}$", re.IGNORECASE)
+
+#: Provider settings the panel may write through /ui/config. Everything else
+#: is ignored, so a hostile page that somehow reached this endpoint can't
+#: smuggle arbitrary keys into config.json.
+_ALLOWED_PROVIDER_FIELDS = frozenset(
+    {
+        "type",
+        "api_style",
+        "base_url",
+        "api_key",
+        "default_model",
+        "models",
+        "x_opencode_session",
+        "headers",
     }
 )
 
@@ -324,23 +344,40 @@ class Handler(BaseHTTPRequestHandler):
             np = patch.get("default_provider")
             if np and isinstance(np, str) and np.strip():
                 data["default_provider"] = np.strip()
-            for name, fields in (patch.get("providers") or {}).items():
+            providers_patch = patch.get("providers") or {}
+            if not isinstance(providers_patch, dict):
+                raise ValueError("providers must be an object")
+            existing = data.setdefault("providers", {})
+            for name, fields in providers_patch.items():
+                if not isinstance(name, str) or not _PROVIDER_NAME_RE.fullmatch(name):
+                    raise ValueError("provider name must be [a-z0-9_-] (max 32)")
                 if not isinstance(fields, dict):
                     continue
-                current = data.setdefault("providers", {}).setdefault(name, {})
+                current = dict(existing.get(name) or {})
+                is_new = name not in existing
                 for key, value in fields.items():
-                    if value is None:
+                    if key not in _ALLOWED_PROVIDER_FIELDS or value is None:
                         continue
                     value = str(value).strip()
                     if key == "api_key":
                         if value:  # empty string means "keep the current key"
                             current["api_key"] = value
-                    elif value:
+                        continue
+                    if value or key == "type":
                         current[key] = value
+                if is_new:
+                    ptype = current.get("type") or "openai"
+                    if ptype not in cfg_mod.VALID_PROVIDER_TYPES:
+                        raise ValueError("unknown provider type '%s'" % ptype)
+                    if ptype in ("custom", "other", "opencode") and not current.get("base_url"):
+                        raise ValueError("provider '%s' needs a base_url" % name)
+                    if ptype == "opencode" and not current.get("x_opencode_session"):
+                        raise ValueError("provider '%s' (opencode) needs x_opencode_session" % name)
+                existing[name] = current
 
         try:
             cfg = _ui_persist(self.app.config_path, mutator)
-        except ValueError as ex:
+        except (ValueError, ConfigError) as ex:
             raise BadRequest(str(ex))
         _swap_app(self, cfg)
         self._send_json(200, {"ok": True, "note": "applied without restart"})
@@ -452,7 +489,11 @@ def _ui_config_view(cfg):
 def _ui_persist(config_path, mutator):
     """Edit the on-disk config, validate it, write atomically, and reload.
 
-    Returns the freshly loaded config; raises ValueError on invalid edits.
+    The candidate is parsed, then fully validated (``load_config`` plus a
+    dry-run of every provider build) while still in the ``.tmp`` file, so a
+    bad save never lands in ``config.json`` and never breaks the next boot.
+    Returns the freshly loaded config; raises ValueError/ConfigError on
+    invalid edits.
     """
     path = config_path or cfg_mod.DEFAULT_CONFIG_PATH
     if os.path.exists(path):
@@ -465,8 +506,14 @@ def _ui_persist(config_path, mutator):
     with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
+    try:
+        cfg = cfg_mod.load_config(tmp)
+        build_all(cfg["providers"])  # reject configs the bridge can't boot with
+    except (ValueError, ConfigError):
+        os.remove(tmp)
+        raise
     os.replace(tmp, path)
-    return cfg_mod.load_config(path)
+    return cfg
 
 
 def _swap_app(handler, cfg):

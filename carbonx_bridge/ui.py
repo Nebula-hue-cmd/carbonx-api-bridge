@@ -217,13 +217,54 @@ PAGE = """<!doctype html>
         <label class="pill" for="default" style="font-size:12px">Default provider</label>
         <select id="default" style="flex:1; min-width:120px"></select>
         <button id="save" class="btn">Save &amp; apply</button>
+        <button id="addbtn" class="ghost">Add provider</button>
       </div>
       <div class="muted" id="modelshint" style="font-size:12.5px; color:var(--muted); margin-top:8px">Paste an API key to add or replace a model's key. Leave a key blank to keep the current one. No restart needed.</div>
+      <div id="addwrap" hidden>
+        <div class="row" style="margin-top:12px">
+          <label class="pill" for="preset" style="font-size:12px">Preset</label>
+          <select id="preset" style="flex:1; min-width:140px">
+            <option value="">Manual</option>
+            <option value="ollama">Ollama (local)</option>
+            <option value="lmstudio">LM Studio (local)</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="opencode">OpenCode</option>
+            <option value="custom">Custom / any endpoint</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </div>
+        <div class="prov" style="margin-top:10px">
+          <div class="fields">
+            <div><div class="lbl">Name</div><input type="text" id="nname" placeholder="e.g. ollama, my-llm"></div>
+            <div><div class="lbl">Type</div><select id="ntype">
+              <option value="custom">custom</option>
+              <option value="openai">openai</option>
+              <option value="anthropic">anthropic</option>
+              <option value="openrouter">openrouter</option>
+              <option value="opencode">opencode</option>
+              <option value="other">other</option>
+              <option value="mock">mock</option>
+            </select></div>
+            <div id="nstylewrap"><div class="lbl">API style</div><select id="nstyle">
+              <option value="openai">openai</option><option value="anthropic">anthropic</option>
+            </select></div>
+            <div id="nsesswrap" hidden><div class="lbl">x-opencode-session</div><input type="password" id="nsess" autocomplete="off"></div>
+            <div><div class="lbl">Base URL</div><input type="text" id="nbase" placeholder="http://localhost:11434/v1"></div>
+            <div><div class="lbl">API key (optional)</div><input type="password" id="nkey" autocomplete="off"></div>
+            <div><div class="lbl">Default model</div><input type="text" id="nmodel" placeholder="e.g. deepseek/deepseek-r1:free"></div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button id="addsave" class="btn">Add provider</button>
+            <button id="addcancel" class="ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
       <div id="provs" style="margin-top:12px"></div>
     </div>
   </div>
   <div class="glass card try tall" style="margin-top:18px">
-    <h2>Try it now <span class="pill" style="margin-left:8px; text-transform:none; letter-spacing:0; font-size:11.5px">uses the default provider</span></h2>
+    <h2>Try it now <span class="pill" style="margin-left:8px; text-transform:none; letter-spacing:0; font-size:11.5px">uses the default provider's default model</span></h2>
     <textarea id="try" placeholder="Ask the bridge something&hellip;"></textarea>
     <div class="row tryrow">
       <button id="trysend" class="btn">Send</button>
@@ -372,7 +413,7 @@ async function tryChat() {
     const r = await fetch("/v1/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok },
-      body: JSON.stringify({ messages: [{ role: "user", content: text }], model: CONFIG.default_provider })
+      body: JSON.stringify({ messages: [{ role: "user", content: text }] })
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error((data.error && data.error.message) || ("HTTP " + r.status));
@@ -385,6 +426,50 @@ async function tryChat() {
     out.textContent = "Error: " + e.message;
   } finally { btn.disabled = false; $("trystate").textContent = ""; }
 }
+
+// ---- add provider ----
+const PRESETS = {
+  ollama:    { name: "ollama",    type: "custom",    style: "openai",    base: "http://localhost:11434/v1", model: "llama3.1" },
+  lmstudio:  { name: "lmstudio",  type: "custom",    style: "openai",    base: "http://localhost:1234/v1",   model: "" },
+  openrouter:{ name: "openrouter",type: "openrouter",style: "openai",    base: "https://openrouter.ai/api/v1", model: "" },
+  opencode:  { name: "opencode",  type: "opencode",  style: "openai",    base: "",                            model: "" },
+  custom:    { name: "",           type: "custom",    style: "openai",    base: "",                            model: "" },
+  openai:    { name: "openai",    type: "openai",    style: "openai",    base: "",                            model: "gpt-4o-mini" },
+  anthropic: { name: "anthropic", type: "anthropic", style: "anthropic", base: "",                            model: "claude-3-5-sonnet-latest" },
+};
+function syncAddForm() {
+  const t = $("ntype").value;
+  $("nstylewrap").hidden = !(t === "custom" || t === "other");
+  $("nsesswrap").hidden = t !== "opencode";
+}
+$("addbtn").addEventListener("click", () => { $("addwrap").hidden = false; $("nname").focus(); });
+$("addcancel").addEventListener("click", () => { $("addwrap").hidden = true; });
+$("preset").addEventListener("change", () => {
+  const p = PRESETS[$("preset").value];
+  if (!p) return;
+  $("nname").value = p.name; $("ntype").value = p.type; $("nstyle").value = p.style;
+  $("nbase").value = p.base; $("nmodel").value = p.model; $("nkey").value = ""; $("nsess").value = "";
+  syncAddForm();
+});
+$("ntype").addEventListener("change", syncAddForm);
+$("addsave").addEventListener("click", async () => {
+  const name = $("nname").value.trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,32}$/.test(name)) { toast("Name: letters, digits, _ or - (max 32)", "err"); return; }
+  if (CONFIG.providers[name]) { toast("Provider '" + name + "' already exists \u2014 edit its card instead.", "err"); return; }
+  const t = $("ntype").value;
+  const fields = { type: t };
+  if (t === "custom" || t === "other") fields.api_style = $("nstyle").value;
+  if (t === "opencode") { const s = $("nsess").value.trim(); if (s) fields.x_opencode_session = s; }
+  const base = $("nbase").value.trim(); if (base) fields.base_url = base;
+  const key = $("nkey").value.trim(); if (key) fields.api_key = key;
+  const model = $("nmodel").value.trim(); if (model) fields.default_model = model;
+  try {
+    const o = {}; o[name] = fields;
+    await api("POST", "/ui/config", { providers: o });
+    toast("Provider '" + name + "' added."); $("addwrap").hidden = true;
+    await loadConfig();
+  } catch (e) { toast(e.message, "err"); }
+});
 
 // ---- wire up ----
 $("newtok").addEventListener("click", genToken);

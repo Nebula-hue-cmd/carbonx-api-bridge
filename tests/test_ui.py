@@ -307,6 +307,132 @@ class TestConfigEditor(unittest.TestCase):
             server.close()
             tmp.cleanup()
 
+    def test_add_provider_happy_path(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json(
+                "/ui/config",
+                body={
+                    "default_provider": "ollama",
+                    "providers": {
+                        "ollama": {
+                            "type": "custom",
+                            "api_style": "openai",
+                            "base_url": "http://localhost:11434/v1",
+                            "default_model": "llama3.1",
+                        }
+                    },
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+            # live app now serves it as the default provider
+            status, health = server.json("/health")
+            self.assertEqual(status, 200)
+            self.assertIn("ollama", health["providers"])
+            self.assertEqual(health["default_provider"], "ollama")
+            # persisted to disk and the view reflects it
+            with open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            provider = data["providers"]["ollama"]
+            self.assertEqual(provider["type"], "custom")
+            self.assertEqual(provider["base_url"], "http://localhost:11434/v1")
+            status, view = server.json("/ui/config")
+            self.assertEqual(status, 200)
+            self.assertEqual(view["default_provider"], "ollama")
+            self.assertEqual(view["providers"]["ollama"]["base_url"], "http://localhost:11434/v1")
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_add_provider_bad_name_400(self):
+        server, tmp = _make_ui_server()
+        try:
+            for bad in ("has space", "UPPER#", "", "a" * 33, "x/y"):
+                status, body = server.json(
+                    "/ui/config", body={"providers": {bad: {"type": "custom", "base_url": "http://localhost:1/v1"}}}
+                )
+                self.assertEqual(status, 400, bad)
+                self.assertEqual(body["error"]["type"], "bad_request")
+            status, _ = server.json("/health")
+            self.assertEqual(status, 200)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_add_provider_unknown_type_400(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json(
+                "/ui/config", body={"providers": {"x": {"type": "wat", "base_url": "http://localhost:1/v1"}}}
+            )
+            self.assertEqual(status, 400)
+            self.assertIn("unknown provider type", body["error"]["message"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_add_provider_needs_base_url(self):
+        server, tmp = _make_ui_server()
+        try:
+            for ptype in ("custom", "other", "opencode"):
+                status, body = server.json(
+                    "/ui/config", body={"providers": {"x": {"type": ptype, "default_model": "m"}}}
+                )
+                self.assertEqual(status, 400, ptype)
+                self.assertIn("base_url", body["error"]["message"])
+            # opencode also needs a session even with a base_url
+            status, body = server.json(
+                "/ui/config", body={"providers": {"x": {"type": "opencode", "base_url": "http://localhost:1"}}}
+            )
+            self.assertEqual(status, 400)
+            self.assertIn("x_opencode_session", body["error"]["message"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_add_provider_ignores_unknown_fields(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json(
+                "/ui/config",
+                body={
+                    "providers": {
+                        "mine": {
+                            "type": "custom",
+                            "base_url": "http://localhost:99/v1",
+                            "exec": "malicious",
+                            "__class__": "oops",
+                        }
+                    }
+                },
+            )
+            self.assertEqual(status, 200)
+            with open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.assertNotIn("exec", data["providers"]["mine"])
+            self.assertNotIn("__class__", data["providers"]["mine"])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_failed_save_leaves_disk_unouched(self):
+        server, tmp = _make_ui_server()
+        try:
+            before = open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8").read()
+            status, _ = server.json(
+                "/ui/config", body={"providers": {"bad name": {"type": "custom", "base_url": "http://localhost:1/v1"}}}
+            )
+            self.assertEqual(status, 400)
+            after = open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8").read()
+            self.assertEqual(after, before)
+            # no temp droppings from the failed persist
+            leftovers = [f for f in os.listdir(tmp.name) if f.endswith(".tmp")]
+            self.assertEqual(leftovers, [])
+        finally:
+            server.close()
+            tmp.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()
