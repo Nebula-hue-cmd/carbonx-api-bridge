@@ -143,6 +143,23 @@ try {
   await sleep(1200);
   check("Save & apply shows a success toast", /Saved/.test(await evalJS("(document.querySelector('#toasts .toast:last-child')||{}).textContent || ''")));
 
+  // ---- add a provider through the panel UI (Ollama preset) ----
+  const ollamaAlready = await evalJS(`!!CONFIG.providers.ollama`);
+  if (!ollamaAlready) {
+    await evalJS(`document.getElementById('addbtn').click()`);
+    await evalJS(`(()=>{const s=document.getElementById('preset'); s.value='ollama'; s.dispatchEvent(new Event('change'));})()`);
+    await evalJS(`document.getElementById('addsave').click()`);
+    const cardAdded = await wait(`[...document.querySelectorAll('#provs .name')].some(n=>n.textContent.trim()==='ollama')`, 8000);
+    check("Add-provider (Ollama preset) creates its card", !!cardAdded);
+    check("add-provider toast shown", /Provider 'ollama' added/.test(await evalJS("(document.querySelector('#toasts .toast:last-child')||{}).textContent || ''")));
+  } else {
+    check("add-provider (ollama already present from a previous run)", true, "skipped");
+  }
+  const ollamaUrl = await evalJS(`fetch('/ui/config').then(r=>r.json()).then(d=>d.providers.ollama && d.providers.ollama.base_url || '')`);
+  check("ollama provider persisted via /ui/config", ollamaUrl === "http://localhost:11434/v1", ollamaUrl);
+  const defaultProv = await evalJS(`fetch('/ui/config').then(r=>r.json()).then(d=>d.default_provider)`);
+  check("default provider still mock after adding", defaultProv === "mock", defaultProv);
+
   const persist = await evalJS(`fetch('/ui/token').then(r=>r.json()).then(d=>d.tokens.length)`);
   check("new token persisted server-side", persist === tokCount1, "server sees " + persist);
   check("no console errors after all interactions", jsErrors.length === 0, jsErrors.slice(0, 3).join(" | "));

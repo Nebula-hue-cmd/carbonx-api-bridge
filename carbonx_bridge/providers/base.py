@@ -65,7 +65,10 @@ class Provider:
 
     # -- configuration helpers ------------------------------------------
     def _resolve_model(self, params):
-        return params.get("model") or self.model
+        model = params.get("model")
+        if model in (None, "", "@default"):
+            return self.model
+        return model
 
     def _headers_extra(self):
         out = {}

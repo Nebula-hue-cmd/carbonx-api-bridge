@@ -64,7 +64,15 @@ edit `config.json` by hand:
      immediately, no restart.
    - **Try it now** — send a test message straight from the panel to confirm
      a provider key works (provider-side errors are shown as toasts so you
-     know exactly what failed).
+     know exactly what failed). It uses the default provider's configured
+     model, so no provider/model arguments can get confused.
+   - **Add provider** — plug in your own models without ever touching JSON.
+     Presets fill in Ollama (`http://localhost:11434/v1`), LM Studio
+     (`http://localhost:1234/v1`), OpenRouter, OpenCode, OpenAI, Anthropic, or
+     start *Manual* and point it at any endpoint. Each adds a card and appears
+     in the default-provider dropdown immediately. Provider names are
+     validated up front and a bad definition is rejected (with the on-disk
+     config left untouched) instead of breaking the bridge.
    - Pick a **theme** — Midnight, Light, Ocean, Forest or Sunset, all with a
      frosted-glass look — the panel remembers your choice next time.
    - Every action (token create/delete, config save) pops a status toast, so

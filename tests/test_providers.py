@@ -112,6 +112,19 @@ class TestOpenAICompatible(unittest.TestCase):
         self.assertNotIn("stream", req["body"])
         self.assertTrue(hs.get("authorization", "").startswith("Bearer "))
 
+    def test_model_resolution_uses_provider_default(self):
+        p = build_provider("oai", {"type": "openai", "api_key": "sk-abcdefghijklmnopqrstuvwxyz", "base_url": self.up.url, "default_model": "m"})
+        for sent in ("@default", ""):
+            out = p.chat({"messages": [{"role": "user", "content": "hi"}], "model": sent})
+            self.assertEqual(out["model"], "m", repr(sent))
+            self.assertEqual(CaptureHandler.requests[-1]["body"]["model"], "m")
+        out = p.chat({"messages": [{"role": "user", "content": "hi"}]})  # no model at all
+        self.assertEqual(out["model"], "m")
+        self.assertEqual(CaptureHandler.requests[-1]["body"]["model"], "m")
+        # explicit model still wins
+        out = p.chat({"messages": [{"role": "user", "content": "hi"}], "model": "gpt-4o"})
+        self.assertEqual(CaptureHandler.requests[-1]["body"]["model"], "gpt-4o")
+
     def test_stream_yields_deltas(self):
         up = FakeUpstream(FakeSSEHandler)
         try:
