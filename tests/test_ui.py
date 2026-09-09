@@ -22,6 +22,78 @@ def _make_ui_server(overrides=None):
     return server, tmp
 
 
+def _raw_request(server, method, path, headers, body=b""):
+    """Send a request with full control over headers (e.g. a forged Host)."""
+    import http.client
+
+    conn = http.client.HTTPConnection("127.0.0.1", server.server.server_address[1], timeout=15)
+    conn.putrequest(method, path, skip_host=("Host" in headers))
+    for k, v in headers.items():
+        conn.putheader(k, v)
+    conn.endheaders(body)
+    res = conn.getresponse()
+    data = res.read()
+    conn.close()
+    return res.status, res.headers, data
+
+
+class TestAdminSurfaceGuards(unittest.TestCase):
+    def test_page_rejects_dns_rebinding_host(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, _, _ = _raw_request(server, "GET", "/", {"Host": "rebind.attacker.example"})
+            self.assertEqual(status, 403)
+            status, _, _ = _raw_request(server, "GET", "/ui/token", {"Host": "127.1.1.1"})
+            self.assertEqual(status, 403)
+            status, _, _ = _raw_request(server, "GET", "/ui/status", {"Host": "rebind.attacker.example"})
+            self.assertEqual(status, 403)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_admin_endpoints_accept_loopback_hosts(self):
+        server, tmp = _make_ui_server()
+        try:
+            for host in ("127.0.0.1:%d" % server.server.server_address[1], "localhost", "[::1]:%d" % server.server.server_address[1]):
+                status, _, _ = _raw_request(server, "GET", "/ui/token", {"Host": host})
+                self.assertEqual(status, 200, host)
+                status, _, _ = _raw_request(server, "GET", "/ui/status", {"Host": host})
+                self.assertEqual(status, 200, host)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_csrf_blocked_by_fetch_metadata_and_origin(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json("/ui/config", headers={"Sec-Fetch-Site": "cross-site"})
+            self.assertEqual(status, 403)
+            status, body = server.json("/ui/config", headers={"Origin": "https://evil.example"})
+            self.assertEqual(status, 403)
+            # a normal loopback client still works when the browser marks it same-origin
+            status, body = server.json("/ui/config", headers={"Sec-Fetch-Site": "same-origin"})
+            self.assertEqual(status, 200)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_api_surface_not_host_gated(self):
+        # LAN clients on /v1/* keep working; only the admin surface is rebound-locked
+        server, tmp = _make_ui_server()
+        try:
+            status, chat = server.json(
+                "/v1/chat",
+                body={"messages": [{"role": "user", "content": "hi"}]},
+                token="test-token-admin",
+                headers={"Host": "192.168.1.50"},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(chat["content"], "hello from mock")
+        finally:
+            server.close()
+            tmp.cleanup()
+
+
 class TestControlPanel(unittest.TestCase):
     def test_page_served(self):
         server, tmp = _make_ui_server()
@@ -43,7 +115,7 @@ class TestControlPanel(unittest.TestCase):
                 status, _ = server.json("/ui/config")
                 self.assertEqual(status, 403)
                 status, _, _ = server.request("/")
-                self.assertEqual(status, 200)  # the page itself is public
+                self.assertEqual(status, 403)  # the whole admin surface is loopback-only
         finally:
             server.close()
             tmp.cleanup()
