@@ -63,9 +63,12 @@ edit `config.json` by hand:
      base URL or model. Click *Save & apply* — changes take effect
      immediately, no restart.
    - **Try it now** — send a test message straight from the panel to confirm
-     a provider key works before you leave the page.
-   - Pick a **theme** (Midnight, Light, Ocean, Forest, Sunset) — remembers your
-     choice next time.
+     a provider key works (provider-side errors are shown as toasts so you
+     know exactly what failed).
+   - Pick a **theme** — Midnight, Light, Ocean, Forest or Sunset, all with a
+     frosted-glass look — the panel remembers your choice next time.
+   - Every action (token create/delete, config save) pops a status toast, so
+     nothing ever happens silently.
    - Keys are never shown again after saving; the panel only reports whether a
      key is set.
 
@@ -233,9 +236,23 @@ python -m carbonx_bridge --version
   and headers are never logged.
 - **No arbitrary URL proxying.** The bridge only talks to configured provider
   base URLs.
-- **Control panel is loopback-only.** `/` and the `/ui/*` endpoints only
-  answer from the machine running the bridge; keys written through the panel
-  are never returned or logged.
+- **Control panel is loopback-only and DNS-rebinding-proof.** `/` and the
+  `/ui/*` endpoints only answer when the request (a) comes from the loopback
+  interface, (b) has a `Host` header that names a loopback host (`127.0.0.1`,
+  `localhost`, `::1`), and (c) isn't flagged as cross-site by the browser
+  (`Sec-Fetch-Site`, `Origin`). This blocks the classic attacks against an
+  unauthenticated local panel: a malicious website **can't** read or click it
+  via CSRF, and a rebinding domain that resolves to `127.0.0.1` gets a 403.
+  Keys written through the panel are never returned or logged. The `/v1/*` API
+  intentionally stays open to non-loopback clients (LAN Lumen instances) — so
+  only the *admin* surface is locked down, and `--host 0.0.0.0` remains safe
+  for sharing the API, not the panel.
+- **Is plain HTTP safe?** The panel is bound to `127.0.0.1` by default, so its
+  traffic never crosses the network — HTTP on loopback is fine, and that's the
+  default posture. Treat remote exposure like any service on your LAN: don't
+  port-forward, don't put it on the internet without a TLS terminator in front,
+  and don't expose the panel. (Local malware that already has code execution
+  on the machine is out of scope for any local server.)
 - **Clean errors only**: `400 401 403 404 405 413 429 500 502`, JSON
   `{"error":{"type","message","code"}}`, plus `Retry-After` on 429.
 - **Deployment**: run locally or behind your own TLS terminator.

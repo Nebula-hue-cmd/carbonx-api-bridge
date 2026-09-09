@@ -1,4 +1,4 @@
-"""CarbonX API bridge — HTTP layer.
+﻿"""CarbonX API bridge â€” HTTP layer.
 
 Endpoints (all JSON, ``application/json`` unless noted):
 
@@ -37,7 +37,7 @@ from .providers import build_all, pick
 from .redact import redact
 from .streaming import done, error_chunk, stream_provider_events
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 QUIET_ENDPOINTS = {"/v1/stream"}
 
@@ -166,8 +166,10 @@ class Handler(BaseHTTPRequestHandler):
             path = self.path.split("?")[0]
             if path == "/":
                 return self._ui_page()
-            if path == "/health" or path == "/ui/status":
+            if path == "/health":
                 return self._health()
+            if path == "/ui/status":
+                return self._ui_status()
             if path == "/v1/models":
                 return self._models()
             if path == "/ui/token":
@@ -205,11 +207,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     # -- control panel (loopback-only) -----------------------------------
-    def _require_loopback(self):
+    def _guard_admin_surface(self):
+        """Reject DNS-rebinding and CSRF aimed at / and /ui/*.
+
+        * Host must name a loopback interface (rebinding lets an attacker
+          site's domain resolve to 127.0.0.1 in *your* browser, which then
+          reads the panel same-origin).
+        * If the browser tells us how it navigated (Sec-Fetch-Site / Origin),
+          it must be us (or a top-level navigation), not a cross-site page.
+        """
+        if not ui.host_is_loopback(self.headers.get("Host")):
+            raise Forbidden("control panel only answers to localhost hostnames")
+        fetch_site = self.headers.get("Sec-Fetch-Site")
+        if fetch_site and fetch_site.lower() not in ("same-origin", "none"):
+            raise Forbidden("cross-site request blocked")
+        origin = self.headers.get("Origin")
+        if origin and not ui.host_is_loopback(origin.split("://", 1)[-1].split("/", 1)[0]):
+            raise Forbidden("cross-origin request blocked")
         if not ui.is_loopback(self.client_address[0]):
             raise Forbidden("the control panel is loopback-only (must run on this machine)")
 
     def _ui_page(self):
+        self._guard_admin_surface()
         data = ui.PAGE.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -217,8 +236,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _ui_status(self):
+        self._guard_admin_surface()
+        return self._health()
+
     def _ui_tokens(self):
-        self._require_loopback()
+        self._guard_admin_surface()
         tokens = [
             {"token": token, "user": info.get("user", "?"), "tier": info.get("tier", "free")}
             for token, info in (self.app.cfg["auth"].get("tokens") or {}).items()
@@ -226,11 +249,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"tokens": tokens})
 
     def _ui_config(self):
-        self._require_loopback()
+        self._guard_admin_surface()
         self._send_json(200, _ui_config_view(self.app.cfg))
 
     def _ui_new_token(self):
-        self._require_loopback()
+        self._guard_admin_surface()
         patch = parse_json(self._route())
         if patch.get("action") == "delete":
             return self._ui_delete_token(patch)
@@ -269,7 +292,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True})
 
     def _ui_save_config(self):
-        self._require_loopback()
+        self._guard_admin_surface()
         patch = parse_json(self._route())
 
         def mutator(data):
@@ -434,7 +457,7 @@ def main(argv=None):
 
     parser = argparse.ArgumentParser(
         prog="carbonx-bridge",
-        description="CarbonX API Bridge — BYOK LLM gateway (REST + SSE).",
+        description="CarbonX API Bridge â€” BYOK LLM gateway (REST + SSE).",
     )
     parser.add_argument("--version", action="version", version="carbonx-api-bridge %s" % __version__)
     parser.add_argument("--host", help="override server.host from config.json (default 127.0.0.1)")
@@ -454,7 +477,7 @@ def main(argv=None):
     created, generated_token = cfg_mod.ensure_config()
     if created:
         print("=" * 62)
-        print("[bridge] No config.json found — I created one for you.")
+        print("[bridge] No config.json found â€” I created one for you.")
         print("[bridge]")
         print("[bridge] Your access token (paste this into your Lumen/bridge settings):")
         print("[bridge]")
