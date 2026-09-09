@@ -171,6 +171,17 @@ PAGE = """<!doctype html>
   .console { background:var(--chip); border:1px solid var(--chip-line); border-radius:14px; padding:14px 16px;
     font-size:13.5px; white-space:pre-wrap; word-break:break-word; min-height:60px; margin-top:12px; max-height:260px; overflow:auto; }
   .console.err { background:color-mix(in srgb, var(--err) 10%, transparent); border-color:color-mix(in srgb, var(--err) 45%, transparent); color:var(--err); }
+  .big { padding-bottom:26px; }
+  #chat { max-height:450px; min-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;
+    background:var(--chip); border:1px solid var(--chip-line); border-radius:16px; padding:14px; margin-top:12px; }
+  .msg { max-width:82%; padding:10px 13px; border-radius:16px; font-size:14px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+  .msg.user { align-self:flex-end; background:linear-gradient(120deg, var(--acc-from), var(--acc-to)); color:var(--acc-fg); border-bottom-right-radius:6px; }
+  .msg.ai { align-self:flex-start; background:var(--surface); border:1px solid var(--chip-line); border-bottom-left-radius:6px; }
+  .msg.err { border-color:color-mix(in srgb, var(--err) 55%, transparent); color:var(--err); align-self:flex-start; }
+  .msg.streaming::after { content:"|"; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .syslbl { font-size:11.5px; color:var(--muted); margin:8px 0 3px; }
+  #sysprompt { min-height:150px; font-family:"Cascadia Mono",Consolas,"Courier New",monospace; font-size:12.5px; line-height:1.5; }
   #toasts { position:fixed; top:76px; left:50%; transform:translateX(-50%); z-index:50; display:flex; flex-direction:column; gap:8px; align-items:center; }
   .toast { padding:11px 18px; border-radius:12px; font-size:13.5px; font-weight:500; max-width:min(92vw,560px);
     background:var(--chip); border:1px solid var(--chip-line); color:var(--fg);
@@ -263,14 +274,33 @@ PAGE = """<!doctype html>
       <div id="provs" style="margin-top:12px"></div>
     </div>
   </div>
-  <div class="glass card try tall" style="margin-top:18px">
-    <h2>Try it now <span class="pill" style="margin-left:8px; text-transform:none; letter-spacing:0; font-size:11.5px">uses the default provider's default model</span></h2>
-    <textarea id="try" placeholder="Ask the bridge something&hellip;"></textarea>
-    <div class="row tryrow">
-      <button id="trysend" class="btn">Send</button>
-      <span class="pill" id="trystate"></span>
+  <div class="glass card big" style="margin-top:18px">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Chat <span class="pill" style="margin-left:8px; text-transform:none; letter-spacing:0; font-size:11.5px">multi-turn &middot; streams the default provider</span></h2>
+      <div class="row" style="gap:8px">
+        <button id="chatnew" class="ghost">New chat</button>
+      </div>
     </div>
-    <pre class="console" id="triesult"></pre>
+    <div id="gctxrow" class="row" style="margin-top:12px" hidden>
+      <span class="pill" id="gctxinfo" style="font-size:12px"></span>
+      <button id="gctxclear" class="ghost">Forget game context</button>
+    </div>
+    <div id="chat" aria-live="polite"></div>
+    <div class="row" style="margin-top:10px">
+      <input id="chatinput" type="text" placeholder="Ask about your game, or anything else&hellip; (Enter to send)" autocomplete="off">
+      <button id="chatsend" class="btn">Send</button>
+      <span class="pill" id="chatstate"></span>
+    </div>
+  </div>
+  <div class="glass card" style="margin-top:18px">
+    <h2>Assistant identity <span class="pill" id="systag" style="margin-left:8px; text-transform:none; letter-spacing:0; font-size:11.5px"></span></h2>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:2px">Sent to the model with every message. It tells the AI what the bridge is, who Lumen is, how to read attached game context, and to reply in clean plain text &mdash; no <code>**</code>, no markdown.</div>
+    <div class="syslbl">System prompt</div>
+    <textarea id="sysprompt" placeholder="(empty = no identity prompt is injected)"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button id="syssave" class="btn">Save prompt</button>
+      <button id="sysreset" class="ghost">Reset to default</button>
+    </div>
   </div>
 </main>
 <footer>Loopback-only panel &middot; works on this machine &middot; keys never leave it</footer>
@@ -280,7 +310,7 @@ window.addEventListener("error", (e) => { window.__errs.push(String(e.message));
 window.addEventListener("unhandledrejection", (e) => { window.__errs.push(String((e.reason && e.reason.message) || e.reason)); toast("Request failed: " + ((e.reason && e.reason.message) || "unknown"), "err"); });
 
 const $ = (id) => document.getElementById(id);
-let CONFIG = { providers: {}, default_provider: "" };
+let CONFIG = { providers: {}, default_provider: "", system_prompt: "", system_prompt_default: "", system_prompt_custom: false };
 
 function toast(msg, kind) {
   const box = $("toasts");
@@ -333,7 +363,27 @@ async function loadConfig() {
     $("modelshint").textContent = withKeys
       ? (withKeys + " provider key" + (withKeys === 1 ? " is" : "s are") + " set. Keys are never shown again \u2014 the panel only reports whether a key is set.")
       : "Paste an API key below to add or replace a model's key. Leave a key blank to keep the current one. No restart needed.";
+    const sp = $("sysprompt");
+    if (sp.value !== (CONFIG.system_prompt || "")) sp.value = CONFIG.system_prompt || "";
+    $("systag").textContent = CONFIG.system_prompt
+      ? ((CONFIG.system_prompt_custom ? "custom \u00b7 " : "") + "active")
+      : "off \u2014 no identity prompt";
+    await loadGameContext();
   } catch (e) { toast("Could not load config: " + e.message, "err"); }
+}
+
+async function loadGameContext() {
+  try {
+    const d = await api("GET", "/ui/game-context");
+    if (!d || !d.attached) {
+      $("gctxrow").hidden = true;
+      return;
+    }
+    $("gctxrow").hidden = false;
+    $("gctxinfo").textContent = "Game context attached \u00b7 " + (d.game || "unknown game") +
+      " \u00b7 " + d.files + " file" + (d.files === 1 ? "" : "s") +
+      " \u00b7 " + d.players + " player" + (d.players === 1 ? "" : "s");
+  } catch (e) { /* panel-only info; not fatal */ }
 }
 
 function buildProviderCard(name) {
@@ -401,30 +451,165 @@ async function saveConfig() {
   finally { btn.disabled = false; btn.textContent = "Save & apply"; }
 }
 
-async function tryChat() {
-  const text = $("try").value.trim();
-  if (!text) { toast("Type a message first.", "err"); return; }
-  const btn = $("trysend");
-  btn.disabled = true; $("trystate").textContent = "thinking\u2026";
+// ---- chat ----
+const HISTORY = []; // {role: "user"|"assistant", content}
+let chatBusy = false;
+
+function tidy(s) {
+  return String(s || "")
+    .replace(/```[a-z]*\\s*([\\s\\S]*?)```/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\\*\\*([^*]+)\\*\\*/g, "$1")
+    .replace(/\\*([^*]+)\\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^#{1,6}\\s+/gm, "")
+    .replace(/\\n{3,}/g, "\\n\\n")
+    .trim();
+}
+
+function chatScroll() { const c = $("chat"); c.scrollTop = c.scrollHeight; }
+
+function addMsg(role, html, cls) {
+  const el = document.createElement("div");
+  el.className = "msg " + role + (cls ? " " + cls : "");
+  el.innerHTML = html;
+  $("chat").appendChild(el);
+  chatScroll();
+  return el;
+}
+
+function renderChat() {
+  $("chat").innerHTML = "";
+  if (!HISTORY.length) {
+    addMsg("ai", "Ask me anything \u2014 about your game (I can see its name, players and files when the Lumen executor has attached them) or just about code.", "idle");
+    return;
+  }
+  for (const m of HISTORY) {
+    const safe = m.content.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    addMsg(m.role === "user" ? "user" : "ai", tidy(safe));
+  }
+}
+
+async function chatToken() {
+  const t = await api("GET", "/ui/token");
+  const tok = (t.tokens && t.tokens[0]) ? t.tokens[0].token : null;
+  if (!tok) throw new Error("No access token configured on this machine.");
+  return tok;
+}
+
+async function streamChat(messages, onDelta) {
+  const r = await fetch("/v1/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + await chatToken() },
+    body: JSON.stringify({ messages, stream: true })
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error((err.error && err.error.message) || ("HTTP " + r.status));
+  }
+  if (!r.body) throw new Error("response has no stream");
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith("data:")) continue;
+      const evt = line.slice(5).trim();
+      if (evt === "[DONE]") { reader.cancel(); return true; }
+      try {
+        const j = JSON.parse(evt);
+        if (j.type === "content" && typeof j.delta === "string") onDelta(j.delta);
+        else if (j.type === "error") throw new Error(j.message || "stream error");
+      } catch (e) { if (e && e.name !== "SyntaxError") throw e; }
+    }
+  }
+  return true;
+}
+
+async function plainChat(messages) {
+  const r = await fetch("/v1/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + await chatToken() },
+    body: JSON.stringify({ messages })
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((data.error && data.error.message) || ("HTTP " + r.status));
+  return data.content || "";
+}
+
+async function sendChat() {
+  const text = $("chatinput").value.trim();
+  if (!text || chatBusy) return;
+  chatBusy = true;
+  $("chatinput").value = "";
+  $("chatstate").textContent = "thinking\u2026";
+  const idle = $("chat").querySelector(".msg.idle");
+  if (idle) idle.remove();
+  addMsg("user", tidy(text.replace(/&/g, "&amp;").replace(/</g, "&lt;")));
+  HISTORY.push({ role: "user", content: text });
+  const messages = HISTORY.map((m) => ({ role: m.role, content: m.content }));
+  const aiEl = addMsg("ai", "\u200b", "streaming");
+  let acc = "";
+  const paint = () => { aiEl.textContent = tidy(acc) || "\u200b"; chatScroll(); };
   try {
-    const t = await api("GET", "/ui/token");
-    const tok = (t.tokens && t.tokens[0]) ? t.tokens[0].token : null;
-    if (!tok) throw new Error("No access token configured on this machine.");
-    const r = await fetch("/v1/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok },
-      body: JSON.stringify({ messages: [{ role: "user", content: text }] })
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((data.error && data.error.message) || ("HTTP " + r.status));
-    const out = $("triesult");
-    out.className = "console";
-    out.textContent = data.content || JSON.stringify(data, null, 2);
+    let usedFallback = false;
+    try {
+      await streamChat(messages, (d) => { acc += d; paint(); });
+    } catch (e) {
+      if (e && e.message !== "streaming_unsupported") throw e;
+      usedFallback = true;
+      acc = (await plainChat(messages)) || "";
+      paint();
+    }
+    aiEl.classList.remove("streaming");
+    aiEl.textContent = tidy(acc) || "(no response)";
+    chatScroll();
+    HISTORY.push({ role: "assistant", content: acc });
+    if (usedFallback) toast("Backend has no streaming \u2014 used /v1/chat instead.");
   } catch (e) {
-    const out = $("triesult");
-    out.className = "console err";
-    out.textContent = "Error: " + e.message;
-  } finally { btn.disabled = false; $("trystate").textContent = ""; }
+    aiEl.classList.remove("streaming");
+    aiEl.classList.add("err");
+    aiEl.textContent = "Error: " + e.message;
+    $("chatstate").textContent = "";
+    chatBusy = false;
+    return;
+  }
+  chatBusy = false;
+  $("chatstate").textContent = "";
+}
+
+function newChat() {
+  HISTORY.length = 0;
+  renderChat();
+  $("chatinput").focus();
+}
+
+// ---- assistant identity ----
+async function saveSysPrompt() {
+  const btn = $("syssave");
+  btn.disabled = true; btn.textContent = "Saving\u2026";
+  try {
+    await api("POST", "/ui/config", { server: { system_prompt: $("sysprompt").value.trim() } });
+    toast("Identity prompt saved. New messages use it.");
+    await loadConfig();
+  } catch (e) { toast(e.message, "err"); }
+  finally { btn.disabled = false; btn.textContent = "Save prompt"; }
+}
+
+async function resetSysPrompt() {
+  $("sysprompt").value = CONFIG.system_prompt_default || "";
+  await saveSysPrompt();
+}
+
+async function clearGameContext() {
+  try { await api("DELETE", "/ui/game-context"); toast("Game context cleared."); await loadGameContext(); }
+  catch (e) { toast(e.message, "err"); }
 }
 
 // ---- add provider ----
@@ -474,8 +659,12 @@ $("addsave").addEventListener("click", async () => {
 // ---- wire up ----
 $("newtok").addEventListener("click", genToken);
 $("save").addEventListener("click", saveConfig);
-$("trysend").addEventListener("click", tryChat);
-$("try").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) tryChat(); });
+$("chatsend").addEventListener("click", sendChat);
+$("chatinput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+$("chatnew").addEventListener("click", newChat);
+$("syssave").addEventListener("click", saveSysPrompt);
+$("sysreset").addEventListener("click", resetSysPrompt);
+$("gctxclear").addEventListener("click", clearGameContext);
 
 document.addEventListener("click", (e) => {
   const copyBtn = e.target.closest("[data-copy]");
@@ -504,7 +693,8 @@ document.querySelectorAll("[data-set-theme]").forEach((b) => {
   });
 })();
 
-refreshStatus(); loadTokens(); loadConfig();
+refreshStatus(); loadTokens(); loadConfig(); renderChat();
+setInterval(loadGameContext, 4000);
 </script>
 </body>
 </html>

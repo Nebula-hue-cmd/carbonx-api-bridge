@@ -267,5 +267,101 @@ class TestCustomProvider(unittest.TestCase):
         self.assertEqual(p.kind, "custom")
 
 
+class TestSystemPromptAndGameContextInjection(unittest.TestCase):
+    """Exercise the App-level injection layer through a real openai adapter
+    (CaptureHandler records exactly what would go to the vendor)."""
+
+    def setUp(self):
+        CaptureHandler.requests = []
+        self.up = FakeUpstream(CaptureHandler)
+
+    def tearDown(self):
+        self.up.close()
+        CaptureHandler.requests = []
+
+    def _app(self, server_cfg=None, system_prompt="BRIDGE IDENTITY"):
+        from carbonx_bridge.server import App
+        from tests.helpers import make_config
+
+        cfg = make_config(
+            {
+                "default_provider": "oai",
+                "providers": {
+                    "oai": {"type": "openai", "api_key": "k", "base_url": self.up.url, "default_model": "m"},
+                    "mock": {"type": "mock", "default_model": "mock/m1", "reply": "ok"},
+                },
+                "server": {"system_prompt": system_prompt},
+            }
+        )
+        if server_cfg:
+            cfg["server"].update(server_cfg)
+        return App(cfg)
+
+    def _send(self, app, body):
+        return app.handle_chat(
+            json.dumps({"messages": [{"role": "user", "content": "hi"}]} | body).encode("utf-8"),
+            "Bearer test-token-admin",
+            "127.0.0.1",
+        )
+
+    def test_default_prompt_injected_when_client_silent(self):
+        app = self._app()
+        self._send(app, {})
+        req = CaptureHandler.requests[-1]
+        msgs = req["body"]["messages"]
+        self.assertGreaterEqual(len(msgs), 2)
+        self.assertEqual(msgs[0]["role"], "system")
+        self.assertIn("BRIDGE IDENTITY", msgs[0]["content"])
+
+    def test_client_top_level_system_wins(self):
+        app = self._app()
+        self._send(app, {"system": "CLIENT OVERRIDE"})
+        req = CaptureHandler.requests[-1]
+        msgs = req["body"]["messages"]
+        self.assertEqual(msgs[0]["role"], "system")
+        self.assertEqual(msgs[0]["content"], "CLIENT OVERRIDE")
+
+    def test_existing_system_message_not_duplicated(self):
+        app = self._app()
+        self._send(app, {"messages": [{"role": "system", "content": "born"}, {"role": "user", "content": "hi"}]})
+        req = CaptureHandler.requests[-1]
+        msgs = req["body"]["messages"]
+        self.assertEqual([m for m in msgs if m["role"] == "system"], [{"role": "system", "content": "born"}])
+
+    def test_blank_prompt_disables_injection(self):
+        app = self._app(system_prompt="")
+        self._send(app, {})
+        req = CaptureHandler.requests[-1]
+        self.assertTrue(all(m["role"] != "system" for m in req["body"]["messages"]))
+
+    def test_game_context_appended_to_resolved_prompt(self):
+        app = self._app()
+        app._set_game_context(
+            {
+                "game": "Adopt Me!",
+                "players": [{"name": "Alice", "user_id": "123", "team": "Red"}],
+                "files": [{"path": "workspace/Main", "content": "print('hi')"}],
+            }
+        )
+        self._send(app, {})
+        req = CaptureHandler.requests[-1]
+        msgs = req["body"]["messages"]
+        self.assertEqual(msgs[0]["role"], "system")
+        content = msgs[0]["content"]
+        self.assertIn("BRIDGE IDENTITY", content)
+        self.assertIn("Adopt Me!", content)
+        self.assertIn("Alice", content)
+        self.assertIn("workspace/Main", content)
+        self.assertIn("print('hi')", content)
+
+    def test_context_only_when_set(self):
+        app = self._app()
+        self._send(app, {})
+        req = CaptureHandler.requests[-1]
+        msgs = req["body"]["messages"]
+        self.assertIn("BRIDGE IDENTITY", msgs[0]["content"])
+        self.assertNotIn("Live game context", msgs[0]["content"])
+
+
 if __name__ == "__main__":
     unittest.main()
