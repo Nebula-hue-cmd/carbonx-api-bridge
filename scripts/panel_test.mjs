@@ -71,9 +71,10 @@ class Cdp {
 }
 
 // deterministic markdown reply, split across two stream deltas to prove
-// piecewise accumulation in the chat bubble
+// piecewise accumulation. Covers markdown + rich blocks: callout, table,
+// hex swatches and syntax-colored lua.
 const MD_PIECE1 = "**Bold** and `inline_code`.\n\n";
-const MD_PIECE2 = "```lua\nprint(\"hello from mock\")\n```\n\nDone.";
+const MD_PIECE2 = "```lua\nprint(\"hello from mock\")\n```\n\nDone.\n\n> [!NOTE] Streamed over **mock**.\n\nSwatch: #16a34a.\n\n| Name | Role |\n| --- | --- |\n| Alby | Hero |\n| Mara | Healer |\n\n```luau\nlocal hp = 100 -- health\nprint('hello from mock 2')\n```";
 
 let edge = null;
 try {
@@ -132,6 +133,8 @@ try {
   const toks = await step("wait for token rows", () => wait(`document.querySelectorAll('.tok').length >= 1`));
   check("token list rendered in the DOM", !!toks);
   check("theme dropdown lists all 8 themes", (await evalJS(`[...document.querySelectorAll('#themeSel option')].map(o=>o.value).join(',')`)) === "midnight,light,ocean,forest,sunset,cyberpunk,dracula,nord");
+  check("every native <select> is replaced by a custom dropdown", (await evalJS("document.querySelectorAll('select').length === document.querySelectorAll('.selwrap').length")));
+  check("green X logo rendered (modern brand mark)", (await evalJS(`(()=>{const m=document.querySelector('.brand .mark');if(!m)return false;const cs=getComputedStyle(m,'::before');return cs.width==='4px'&&cs.height==='15px';})()`)) === true);
 
   // ---- theme engine (select-driven, persisted) ----
   await evalJS(`(()=>{const s=document.getElementById('themeSel'); s.value='light'; s.dispatchEvent(new Event('change'));})()`);
@@ -140,6 +143,16 @@ try {
   await evalJS(`(()=>{const s=document.getElementById('themeSel'); s.value='cyberpunk'; s.dispatchEvent(new Event('change'));})()`);
   await sleep(250);
   check("theme select switches to 'cyberpunk'", (await evalJS("document.documentElement.getAttribute('data-theme')")) === "cyberpunk");
+  // ---- custom dropdown: open the theme menu, click an option ----
+  await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selbtn').click()`);
+  await sleep(120);
+  const menuOpen = await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selmenu').classList.contains('open')`);
+  const menuItems = await evalJS(`[...document.querySelector('#themeSel').parentNode.querySelectorAll('.selitem')].map(x=>x.textContent).join(',')`);
+  check("custom dropdown opens with 8 themed options", menuOpen === true && menuItems === "Midnight,Light,Ocean,Forest,Sunset,Cyberpunk,Dracula,Nord", menuItems);
+  await evalJS(`[...document.querySelector('#themeSel').parentNode.querySelectorAll('.selitem')].find(x=>x.textContent==='Ocean').click()`);
+  await sleep(120);
+  check("clicking a dropdown option applies it (data-theme = ocean)", (await evalJS("document.documentElement.getAttribute('data-theme')")) === "ocean");
+  check("dropdown option updates the hidden select + menu closes", (await evalJS(`document.getElementById('themeSel').value==='ocean' && !document.querySelector('#themeSel').parentNode.querySelector('.selmenu').classList.contains('open')`)));
   await evalJS(`(()=>{const s=document.getElementById('themeSel'); s.value='midnight'; s.dispatchEvent(new Event('change'));})()`);
   await sleep(200);
 
@@ -189,6 +202,24 @@ try {
   await evalJS(`window.__copies=[];window.copyText=function(t){window.__copies.push(t);return navigator.clipboard.writeText(t);};document.querySelector('.bubble.assistant .codeblock .copycode').click();`);
   await wait(`window.__copies && window.__copies.length`);
   check("Copy-code button copies the fenced block", (await evalJS("window.__copies.join('|')")).indexOf('print("hello from mock")') >= 0, (await evalJS("window.__copies[0]")));
+
+  // ---- rich display: callout, table, color chip, highlighted luau ----
+  const rich = await evalJS(`(()=>{const b=document.querySelector('.bubble.assistant');return {
+    callout: !!b.querySelector('.callout.note') && (b.querySelector('.callout.note .ct')||{}).textContent,
+    table: b.querySelector('table.md') ? b.querySelectorAll('table.md tbody tr').length : 0,
+    chip: (b.querySelector('.chip .sw')||{}).getAttribute ? b.querySelector('.chip').textContent : '',
+    chips: b.querySelectorAll('.chip').length,
+    tk: b.querySelectorAll('.codeblock .tk-k, .codeblock .tk-s, .codeblock .tk-n').length,
+    lastLang: [...b.querySelectorAll('.codeblock .cbhead code')].pop() ? [...b.querySelectorAll('.codeblock .cbhead code')].pop().textContent : ''
+  };})()`);
+  check("callout box rendered from > [!NOTE]", rich.callout === "Note", rich.callout);
+  check("markdown table rendered with 2 data rows", rich.table === 2, "rows=" + rich.table);
+  check("hex color rendered as a swatch chip", rich.chips >= 1 && /#16a34a/.test(rich.chip || ""), rich.chip);
+  check("lua tokens syntax-colored inside the code block", rich.tk >= 3, "tokens=" + rich.tk);
+  check("second code block has its luau language label", rich.lastLang === "luau", rich.lastLang);
+  await evalJS(`window.__copies=[];const blocks=[...document.querySelectorAll('.bubble.assistant .codeblock')];blocks[1].querySelector('.copycode').click();`);
+  await wait(`window.__copies && window.__copies.length`);
+  check("copy from the highlighted block preserves exact text", (await evalJS("window.__copies.join('\\n')")).indexOf("print('hello from mock 2')") >= 0, await evalJS("window.__copies[0]"));
 
   const been2 = await evalJS("document.querySelectorAll('.bubble').length");
   check("user + assistant bubbles kept in history", been2 >= 2, "bubbles=" + been2);

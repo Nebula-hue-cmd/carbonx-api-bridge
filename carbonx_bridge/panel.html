@@ -89,8 +89,14 @@
     -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur));
   }
   .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
-  .brand .mark { width: 22px; height: 22px; border-radius: 6px; flex: none;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .brand .mark { width: 24px; height: 24px; border-radius: 8px; flex: none; position: relative;
+    background: linear-gradient(135deg, #22c55e, #15803d);
+    box-shadow: 0 2px 10px rgba(34, 197, 94, .5);
+    transition: background-color .25s ease, box-shadow .25s ease; }
+  .brand .mark::before, .brand .mark::after { content: ""; position: absolute; top: 50%; left: 50%;
+    width: 4px; height: 15px; border-radius: 2px; background: #eafff2; }
+  .brand .mark::before { transform: translate(-50%, -50%) rotate(45deg); }
+  .brand .mark::after { transform: translate(-50%, -50%) rotate(-45deg); }
   .brand b { font-size: 15px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; }
   .brand span { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted);
@@ -102,24 +108,38 @@
   .tabs { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 3px; }
   .tabs button { border: 0; background: transparent; color: var(--muted); padding: 6px 14px;
-    border-radius: calc(var(--radius) - 2px); font-weight: 550; }
+    border-radius: calc(var(--radius) - 2px); font-weight: 550; cursor: pointer;
+    transition: background-color .2s ease, color .2s ease, box-shadow .2s ease, transform .1s ease; }
+  .tabs button:hover { color: var(--fg); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+  .tabs button:active { transform: translateY(1px) scale(.98); }
   .tabs button.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 4px rgba(0,0,0,.25); }
   select, input[type=text], input[type=password], textarea {
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 8px 10px; color: var(--fg); outline: none; }
-  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+    padding: 8px 10px; color: var(--fg); outline: none; caret-color: var(--accent);
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .25s ease; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  select option { background: var(--surface); color: var(--fg); }
 
   .btn { background: var(--accent); color: var(--on-accent); border: 1px solid transparent;
-    border-radius: var(--radius); padding: 8px 14px; font-weight: 600; }
-  .btn:hover { filter: brightness(1.08); }
-  .btn:disabled { opacity: .45; cursor: wait; }
+    border-radius: var(--radius); padding: 8px 14px; font-weight: 600; cursor: pointer;
+    transition: background-color .18s ease, filter .2s ease, box-shadow .2s ease, transform .12s ease; }
+  .btn:hover { filter: brightness(1.1); box-shadow: 0 4px 14px rgba(0,0,0,.22); transform: translateY(-1px); }
+  .btn:active { transform: translateY(1px) scale(.98); box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  .btn:disabled { opacity: .45; cursor: wait; transform: none; box-shadow: none; }
   .ghost { background: var(--surface-2); color: var(--fg); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 8px 14px; font-weight: 550; }
-  .ghost:hover { border-color: var(--accent); }
+    border-radius: var(--radius); padding: 8px 14px; font-weight: 550; cursor: pointer;
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
+  .ghost:hover { border-color: var(--accent); color: var(--fg); background: var(--surface); transform: translateY(-1px); }
+  .ghost:active { transform: translateY(1px) scale(.98); }
   .danger { background: transparent; color: var(--err); border: 1px solid transparent;
-    border-radius: var(--radius); padding: 6px 10px; font-weight: 550; }
-  .danger:hover { border-color: var(--err); }
-  .icon { line-height: 1; padding: 4px 8px; border-radius: var(--radius); }
+    border-radius: var(--radius); padding: 6px 10px; font-weight: 550; cursor: pointer;
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
+  .danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+  .danger:active { transform: translateY(1px) scale(.98); }
+  .icon { line-height: 1; padding: 4px 8px; border-radius: var(--radius);
+    transition: background-color .18s ease, transform .12s ease, color .18s ease; }
+  .icon:active { transform: translateY(1px) scale(.98); }
+  button { -webkit-tap-highlight-color: transparent; }
 
   main { height: calc(100vh - 56px); }
   .tab-page { height: 100%; overflow: auto; }
@@ -148,6 +168,11 @@
   .tok code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
   .tok .meta { margin: -4px 2px 8px; font-size: 11.5px; color: var(--muted); }
 
+  /* smooth theme + hover motion across surfaces */
+  .topbar, .card, .sidebar, .chathead, #inputbar, .status, .tabs, .pill, .session, .prov,
+  .tok, .codeblock, .codeblock .cbhead, .toast, .selbtn, .selitem, #inputwrap {
+    transition: background-color .25s ease, border-color .25s ease, color .2s ease, box-shadow .25s ease; }
+
   /* ---- chat tab ---- */
   .chat-page { display: flex; height: 100%; }
   .sidebar { width: 250px; flex: none; border-right: 1px solid var(--border); background: var(--surface);
@@ -155,14 +180,18 @@
   .sidebar.collapsed { width: 0; border-right: 0; }
   .sidebar.collapsed .sbtn, .sidebar.collapsed #sessions { display: none; }
   .sbtn { margin: 12px; padding: 8px; border: 1px dashed var(--border); background: transparent;
-    color: var(--fg); border-radius: var(--radius); font-weight: 550; }
-  .sbtn:hover { border-color: var(--accent); }
+    color: var(--fg); border-radius: var(--radius); font-weight: 550; cursor: pointer;
+    transition: background-color .18s ease, border-color .18s ease, transform .12s ease; }
+  .sbtn:hover { border-color: var(--accent); background: var(--surface-2); }
+  .sbtn:active { transform: translateY(1px) scale(.98); }
   #sessions { flex: 1; overflow: auto; padding: 0 8px 8px; }
   .session { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
     background: transparent; border: 1px solid transparent; border-radius: var(--radius);
-    padding: 7px 8px; color: var(--muted); font-size: 12.5px; }
+    padding: 7px 8px; color: var(--muted); font-size: 12.5px; cursor: pointer;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .12s ease; }
   .session .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session:hover { background: var(--surface-2); color: var(--fg); }
+  .session:active { transform: translateY(1px) scale(.99); }
   .session.active { background: var(--surface-2); color: var(--fg); border-color: var(--border); }
   .session .del { visibility: hidden; padding: 0 4px; color: var(--muted); background: transparent; border: 0; }
   .session:hover .del { visibility: visible; }
@@ -178,7 +207,7 @@
 
   #chat { flex: 1; overflow: auto; padding: 20px 16px; }
   .msgs { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-  .bubble { max-width: 88%; }
+  .bubble { max-width: 88%; animation: bubblein .22s ease-out; }
   .bubble.user { align-self: flex-end; }
   .bubble.ai { align-self: flex-start; }
   .bubble .who { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
@@ -202,6 +231,31 @@
   .codeblock pre { margin: 0; padding: 12px; overflow: auto; }
   .codeblock code { border: 0; background: transparent; padding: 0; font-size: 12.5px; line-height: 1.5; }
   .copycode { font-size: 11px; padding: 3px 8px; }
+  .callout { display: block; border-radius: var(--radius); border: 1px solid var(--border);
+    border-left-width: 3px; padding: 8px 12px; margin: 8px 0; background: var(--surface-2); }
+  .callout .ct { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.2px; margin-bottom: 3px; }
+  .callout .ct ~ p { margin: 0; }
+  .callout.note { border-left-color: var(--accent); } .callout.note .ct { color: var(--accent); }
+  .callout.tip { border-left-color: #22c55e; } .callout.tip .ct { color: #22c55e; }
+  .callout.warn { border-left-color: #f59e0b; } .callout.warn .ct { color: #f59e0b; }
+  .callout.bug { border-left-color: var(--err); } .callout.bug .ct { color: var(--err); }
+  .tblwrap { overflow-x: auto; margin: 8px 0; border: 1px solid var(--border); border-radius: var(--radius); }
+  table.md { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.md th { background: var(--surface-2); text-align: left; }
+  table.md th, table.md td { border: 1px solid var(--border); padding: 6px 10px; }
+  table.md tbody tr:nth-child(even) { background: var(--surface-2); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; vertical-align: -2px;
+    border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px;
+    padding: 1px 8px 1px 4px; font-family: var(--mono); font-size: 11px; color: var(--fg); }
+  .chip .sw { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--border); }
+  .tk-k { color: #b06eff; font-weight: 600; }
+  .tk-s { color: #16a34a; }
+  .tk-n { color: #d97706; }
+  .tk-c { color: var(--muted); font-style: italic; }
+  .tk-f { color: var(--accent-2); }
+  @keyframes bubblein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .bubble .body a { color: var(--accent-2); }
   .idle { color: var(--muted); font-size: 13px; }
   .err .body { border-color: var(--err); color: var(--err); }
@@ -219,10 +273,38 @@
   #metakey { align-self: center; font-size: 11px; color: var(--muted); white-space: nowrap; padding: 0 4px; }
   #chatstate { min-width: 8px; }
 
-  #toasts { position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  /* custom dropdown (native select hidden, kept for value + change events) */
+  .selwrap { position: relative; display: inline-block; }
+  .selbtn { appearance: none; -webkit-appearance: none; display: inline-flex; align-items: center;
+    justify-content: space-between; gap: 10px; min-width: 170px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px;
+    color: var(--fg); font-size: 13.5px; font-weight: 550; cursor: pointer; text-align: left;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .25s ease, transform .12s ease; }
+  .selbtn:hover { border-color: var(--accent); }
+  .selbtn:active { transform: translateY(1px) scale(.98); }
+  .selbtn.open { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .selbtn .selval { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .selarrow { width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translateY(-2px); opacity: .7; margin-top: -2px; transition: transform .2s ease, opacity .2s ease; }
+  .selbtn.open .selarrow { transform: rotate(-135deg) translateY(-1px); opacity: 1; }
+  .selmenu { position: fixed; z-index: 80; min-width: 170px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;
+    box-shadow: 0 18px 44px rgba(0,0,0,.4); overflow: auto; text-align: left;
+    opacity: 0; transform: translateY(-6px) scale(.98); pointer-events: none;
+    transition: opacity .15s ease, transform .18s ease; transform-origin: top left; }
+  .selmenu.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+  .selitem { display: block; width: 100%; text-align: left; background: transparent; border: 0;
+    color: var(--fg); font-size: 13px; padding: 8px 10px; border-radius: calc(var(--radius) - 3px);
+    cursor: pointer; transition: background-color .12s ease, color .12s ease; }
+  .selitem:hover { background: var(--surface-2); }
+  .selitem.active { color: var(--accent); font-weight: 650; }
+  .selitem.active::before { content: "\2713"; margin-right: 7px; color: var(--accent); font-weight: 700; }
+
+  #toasts { position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 90; }
   .toast { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
     color: var(--fg); padding: 9px 14px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.35);
-    max-width: 340px; transition: opacity .3s; }
+    max-width: 340px; transition: opacity .3s; animation: toastin .25s ease-out; }
+  @keyframes toastin { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
   .toast.err { border-color: var(--err); }
   .toast.ok { border-color: var(--ok); }
 </style>
@@ -337,7 +419,7 @@
     </aside>
     <div class="chatcol">
       <div class="chathead">
-        <span class="pill" id="ctxpill" class="off">No context</span>
+        <span class="pill off" id="ctxpill">No context</span>
         <span class="hint" id="currsession"></span>
         <span id="chatstate"></span>
       </div>
@@ -432,6 +514,85 @@ function applyThemeControl() {
 }
 
 // ---- config tab ----
+var ENHANCED_SELECTS = [];
+function enhanceSelects(scope) {
+  [].forEach.call((scope || document).querySelectorAll("select:not([data-enhanced])"), function (sel) {
+    sel.setAttribute("data-enhanced", "1");
+    var wrap = document.createElement("div");
+    wrap.className = "selwrap";
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "selbtn";
+    btn.setAttribute("aria-haspopup", "listbox");
+    var valEl = document.createElement("span");
+    valEl.className = "selval";
+    var arrEl = document.createElement("span");
+    arrEl.className = "selarrow";
+    btn.appendChild(valEl); btn.appendChild(arrEl);
+    var menu = document.createElement("div");
+    menu.className = "selmenu";
+    menu.setAttribute("role", "listbox");
+    wrap.appendChild(btn); wrap.appendChild(menu);
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    sel.style.display = "none";
+    var open = false;
+    function build() {
+      var cur = sel.options.length ? sel.options[sel.selectedIndex] : null;
+      valEl.textContent = cur ? cur.textContent : sel.value || "";
+      menu.innerHTML = "";
+      for (var j = 0; j < sel.options.length; j++) {
+        (function (o) {
+          var it = document.createElement("button");
+          it.type = "button";
+          it.className = "selitem" + (o.selected ? " active" : "");
+          it.textContent = o.textContent;
+          it.setAttribute("role", "option");
+          it.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            sel.value = o.value;
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            close();
+          });
+          menu.appendChild(it);
+        })(sel.options[j]);
+      }
+    }
+    function close() {
+      open = false;
+      btn.classList.remove("open");
+      menu.classList.remove("open");
+      menu.style.pointerEvents = "none";
+    }
+    function openMenu() {
+      build();
+      var r = btn.getBoundingClientRect();
+      var top = r.bottom + 6;
+      var mh = Math.min(264, window.innerHeight - top - 12);
+      if (mh < 90) { mh = 200; top = Math.max(8, r.top - mh - 6); }
+      menu.style.top = top + "px";
+      menu.style.left = r.left + "px";
+      menu.style.minWidth = Math.max(170, r.width) + "px";
+      menu.style.maxHeight = mh + "px";
+      menu.classList.add("open");
+      btn.classList.add("open");
+      open = true;
+    }
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (open) close(); else openMenu();
+    });
+    btn.addEventListener("keydown", function (ev) { if (ev.key === "Escape") close(); });
+    document.addEventListener("click", function (ev) { if (!wrap.contains(ev.target)) close(); });
+    build();
+    ENHANCED_SELECTS.push({ sel: sel, build: build });
+  });
+}
+function syncEnhanced(sel) {
+  for (var k = 0; k < ENHANCED_SELECTS.length; k++) {
+    if (ENHANCED_SELECTS[k].sel === sel) { ENHANCED_SELECTS[k].build(); break; }
+  }
+}
+
 function buildProviderCard(name) {
   var p = CONFIG.providers[name];
   var styleField = (p.type === "custom" || p.type === "other")
@@ -455,7 +616,9 @@ function loadConfig() {
     $("default").innerHTML = Object.keys(CONFIG.providers).map(function (n) {
       return '<option value="' + n + '"' + (n === CONFIG.default_provider ? " selected" : "") + ">" + n + "</option>";
     }).join("");
+    syncEnhanced($("default"));
     $("provs").innerHTML = Object.keys(CONFIG.providers).map(buildProviderCard).join("");
+    enhanceSelects($("provs"));
     var withKeys = Object.keys(CONFIG.providers).filter(function (n) { return CONFIG.providers[n].has_key; }).length;
     $("modelshint").textContent = withKeys
       ? (withKeys + " provider key" + (withKeys === 1 ? " is" : "s are") + " set. Keys are never shown again.")
@@ -562,10 +725,61 @@ function inline(s) {
   s = esc(s);
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/(^|[^\w&#])#((?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3}))(?![0-9a-fA-F])/g,
+    function (m, pre, hex) { return pre + '<span class="chip"><span class="sw" style="background:#' + hex + '"></span>#' + hex + '</span>'; });
   s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
   return s;
+}
+
+var HL_KEYWORDS = {
+  lua: "and break do else elseif end false for function goto if in local nil not or repeat return then true until while",
+  python: "and as assert async await break class continue def del elif else except false finally for from global if import in is lambda none nonlocal not or pass raise return true try while with yield",
+  javascript: "async await break case catch class const continue debugger default delete do else export extends false finally for from function get if import in instanceof let new null of return set static super switch this throw true try typeof undefined var void while with yield",
+  typescript: "async await break case catch class const continue debugger default delete do else export extends false finally for from function get if import in instanceof interface let new null of return set static super switch this throw true try type typeof undefined var void while with yield",
+  bash: "if then else elif fi for while do done case esac in function return break continue local read echo printf cd pwd ls mkdir rm cp mv cat sed awk grep find sudo export set unset declare",
+  sql: "select from where insert into values update set delete join left right inner outer on group by order having limit offset as and or not null is in like between case when then else end distinct union all exists count sum avg min max asc desc table create drop index primary key foreign",
+  css: "none important inherit auto",
+  json: ""
+};
+var HL_LANGS = { lua: 1, luau: 1, python: 1, py: 1, javascript: 1, js: 1, node: 1, typescript: 1, ts: 1,
+  bash: 1, sh: 1, shell: 1, sql: 1, css: 1, json: 1, html: 1, xml: 1 };
+var KW_ALIAS = { luau: "lua", js: "javascript", node: "javascript", sh: "bash", shell: "bash", py: "python", ts: "typescript" };
+function hl(lang, code) {
+  var k = String(lang || "").toLowerCase();
+  if (!HL_LANGS[k]) return esc(code);
+  var kw = HL_KEYWORDS[KW_ALIAS[k] || k] || "";
+  var e = esc(code).replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+  var parts = [
+    /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/.source,
+    /(--\[=*\[[\s\S]*?\]=?\]|--[^\n]*)/.source,
+    /(#[^\n]*)/.source,
+    /(\b0[xX][0-9a-fA-F]+\b|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/.source,
+    kw ? new RegExp("(\\b(?:" + kw.split(/\s+/).join("|") + ")\\b)").source : "(?!)",
+    /(\b[a-zA-Z_$][a-zA-Z0-9_$]*(?=\s*\())/.source
+  ];
+  var re = new RegExp(parts.join("|"), "g"), out = "", i = 0, m;
+  while ((m = re.exec(e))) {
+    out += e.slice(i, m.index);
+    if (m[1]) out += '<span class="tk-s">' + m[1] + "</span>";
+    else if (m[2] || m[3]) out += '<span class="tk-c">' + (m[2] || m[3]) + "</span>";
+    else if (m[4]) out += '<span class="tk-n">' + m[4] + "</span>";
+    else if (m[5]) out += '<span class="tk-k">' + m[5] + "</span>";
+    else if (m[6]) out += '<span class="tk-f">' + m[6] + "</span>";
+    i = re.lastIndex;
+  }
+  return out + e.slice(i);
+}
+
+function isTableSep(l) {
+  if (!/^\s*\|/.test(String(l || ""))) return false;
+  var c = String(l).trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+  return c.length > 1 && c.every(function (x) { return /^[\s:|-]+$/.test(x) && /-/.test(x); });
+}
+function rowCells(l, tag) {
+  return String(l).trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
+    .map(function (c) { return "<" + tag + ">" + inline(c.trim()) + "</" + tag + ">"; }).join("");
 }
 
 function renderMarkdown(src) {
@@ -580,7 +794,20 @@ function renderMarkdown(src) {
       i++;
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
       i++; // skip closing fence
-      html.push('<div class="codeblock"><div class="cbhead"><span><code class="mono">' + esc(lang) + '</code></span><button class="copycode ghost">Copy</button></div><pre><code>' + esc(buf.join("\n")) + '</code></pre></div>');
+      html.push('<div class="codeblock"><div class="cbhead"><span><code class="mono">' + esc(lang) + '</code></span><button class="copycode ghost">Copy</button></div><pre><code>' + hl(lang, buf.join("\n")) + '</code></pre></div>');
+      continue;
+    }
+    // callout box:  > [!NOTE] ...   (contiguous ">" lines)
+    var cm = lines[i].match(/^\s*>\s*\[!([A-Z]+)\]\s*(.*)$/);
+    if (cm) {
+      var ctype = cm[1].toLowerCase();
+      if (ctype === "warning") ctype = "warn";
+      if (ctype === "error") ctype = "bug";
+      var label = cm[1][0].toUpperCase() + cm[1].slice(1).toLowerCase();
+      var clines = [cm[2]];
+      i++;
+      while (i < lines.length && /^\s*>\s*/.test(lines[i])) { clines.push(lines[i].replace(/^\s*>\s*/, "")); i++; }
+      html.push('<div class="callout ' + ctype + '"><span class="ct">' + (ctype === "warn" ? "Warning" : ctype === "bug" ? "Issue" : label) + '</span>' + inline(clines.filter(Boolean).join(" ")) + '</div>');
       continue;
     }
     // gather a paragraph (until blank line or a fence)
@@ -593,6 +820,16 @@ function renderMarkdown(src) {
     if (h && para.length === 1) {
       var lvl = h[1].length;
       html.push("<h" + (lvl + 1) + ">" + inline(h[2]) + "</h" + (lvl + 1) + ">");
+      continue;
+    }
+    // table:   | h1 | h2 |   \n   | -- | -- |   \n rows...
+    if (/^\s*\|/.test(para[0]) && isTableSep(para[1])) {
+      html.push('<div class="tblwrap"><table class="md">');
+      html.push("<thead><tr>" + rowCells(para[0], "th") + "</tr></thead><tbody>");
+      for (var r = 2; r < para.length; r++) {
+        if (/^\s*\|/.test(para[r])) html.push("<tr>" + rowCells(para[r], "td") + "</tr>");
+      }
+      html.push("</tbody></table></div>");
       continue;
     }
     // list block
@@ -781,6 +1018,7 @@ function sendChat() {
   var text = $("chatinput").value.trim();
   if (!text || chatBusy) return;
   chatBusy = true;
+  $("chatsend").disabled = true;
   $("chatinput").value = "";
   autoSize($("chatinput"));
   $("chatstate").textContent = "thinking\u2026";
@@ -814,7 +1052,7 @@ function sendChat() {
       aiEl.classList.add("err");
       aiEl.querySelector(".body").textContent = "Error: " + e.message;
     })
-    .then(function () { chatBusy = false; $("chatstate").textContent = ""; });
+    .then(function () { chatBusy = false; $("chatstate").textContent = ""; $("chatsend").disabled = false; });
 }
 
 // ---- wire up ----
@@ -838,6 +1076,7 @@ $("preset").addEventListener("change", function () {
   if (!p) return;
   $("nname").value = p.name; $("ntype").value = p.type; $("nstyle").value = p.style;
   $("nbase").value = p.base; $("nmodel").value = p.model; $("nkey").value = ""; $("nsess").value = "";
+  syncEnhanced($("ntype")); syncEnhanced($("nstyle"));
   $("nsesswrap").hidden = p.type !== "opencode";
 });
 $("ntype").addEventListener("change", function () { $("nsesswrap").hidden = $("ntype").value !== "opencode"; });
@@ -901,6 +1140,9 @@ $("chatinput").addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
 });
 $("chatinput").addEventListener("input", function () { autoSize($("chatinput")); });
+
+// ---- drop-in UI enhancements ----
+enhanceSelects();
 
 // ---- boot ----
 bootSessions();
