@@ -153,6 +153,11 @@ try {
   await sleep(120);
   check("clicking a dropdown option applies it (data-theme = ocean)", (await evalJS("document.documentElement.getAttribute('data-theme')")) === "ocean");
   check("dropdown option updates the hidden select + menu closes", (await evalJS(`document.getElementById('themeSel').value==='ocean' && !document.querySelector('#themeSel').parentNode.querySelector('.selmenu').classList.contains('open')`)));
+  check("closed menu is not poisoned by an inline pointer-events override", (await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selmenu').style.pointerEvents === ''`)));
+  await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selbtn').click()`);
+  check("dropdown reopens cleanly after being closed once", (await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selmenu').classList.contains('open')`)));
+  await evalJS(`[...document.querySelector('#themeSel').parentNode.querySelectorAll('.selitem')].find(x=>x.textContent==='Forest').click()`);
+  check("second dropdown interaction still selects (no poison)", (await evalJS("document.documentElement.getAttribute('data-theme')")) === "forest");
   await evalJS(`(()=>{const s=document.getElementById('themeSel'); s.value='midnight'; s.dispatchEvent(new Event('change'));})()`);
   await sleep(200);
 
