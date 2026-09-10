@@ -128,6 +128,7 @@ try {
   check("page boots + /health loads (statusline populated)", !!statusText && /v1\.4\.0/.test(statusText), statusText);
   check("no script errors during boot", (await evalJS("window.__errs && window.__errs.length")) === 0);
   check("default tab is Config, Chat page hidden", (await evalJS("document.getElementById('tab-config').hidden === false && document.getElementById('tab-chat').hidden === true")));
+  check("hidden tab truly not rendered (computed display none)", (await evalJS("getComputedStyle(document.getElementById('tab-chat')).display")) === "none");
 
   // ---- config tab primitives ----
   const toks = await step("wait for token rows", () => wait(`document.querySelectorAll('.tok').length >= 1`));
@@ -153,8 +154,12 @@ try {
   await sleep(120);
   check("clicking a dropdown option applies it (data-theme = ocean)", (await evalJS("document.documentElement.getAttribute('data-theme')")) === "ocean");
   check("dropdown option updates the hidden select + menu closes", (await evalJS(`document.getElementById('themeSel').value==='ocean' && !document.querySelector('#themeSel').parentNode.querySelector('.selmenu').classList.contains('open')`)));
+  check("dropdown button label updates instantly after pick", (await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selval').textContent`)) === "Ocean");
   check("closed menu is not poisoned by an inline pointer-events override", (await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selmenu').style.pointerEvents === ''`)));
   await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selbtn').click()`);
+  await sleep(150);
+  const menuAnchor = await evalJS(`(()=>{const w=document.querySelector('#themeSel').parentNode;const b=w.querySelector('.selbtn').getBoundingClientRect();const m=w.querySelector('.selmenu').getBoundingClientRect();return {ok: Math.abs(m.left-b.left)<4 && m.top>=b.bottom-2, dLeft:m.left-b.left, dTop:m.top-b.bottom};})()`);
+  check("dropdown menu anchored under its button (no teleport)", menuAnchor.ok === true, "dLeft=" + menuAnchor.dLeft + " dTop=" + menuAnchor.dTop);
   check("dropdown reopens cleanly after being closed once", (await evalJS(`document.querySelector('#themeSel').parentNode.querySelector('.selmenu').classList.contains('open')`)));
   await evalJS(`[...document.querySelector('#themeSel').parentNode.querySelectorAll('.selitem')].find(x=>x.textContent==='Forest').click()`);
   check("second dropdown interaction still selects (no poison)", (await evalJS("document.documentElement.getAttribute('data-theme')")) === "forest");
@@ -226,6 +231,22 @@ try {
   await wait(`window.__copies && window.__copies.length`);
   check("copy from the highlighted block preserves exact text", (await evalJS("window.__copies.join('\\n')")).indexOf("print('hello from mock 2')") >= 0, await evalJS("window.__copies[0]"));
 
+  // ---- copy-raw-markdown button on assistant bubbles ----
+  const copymdBtn = await evalJS(`!!document.querySelector('.bubble.assistant .copymd')`);
+  check("assistant bubble has a copy-raw-markdown button", copymdBtn);
+  await evalJS(`window.__copies=[];document.querySelector('.bubble.assistant .copymd').click();`);
+  await wait(`window.__copies && window.__copies.length`);
+  const copiedMd = await evalJS("window.__copies[0]||''");
+  check("copy-raw-markdown copies markdown source text", copiedMd.length > 20 && /\\*\\*Bold\\*\\*/.test(copiedMd), "len=" + copiedMd.length);
+
+  // ---- callout copy button ----
+  const copycallBtn = await evalJS(`!!document.querySelector('.bubble.assistant .callout .copycall')`);
+  check("callout box has a copy button", copycallBtn);
+  await evalJS(`window.__copies=[];document.querySelector('.bubble.assistant .callout .copycall').click();`);
+  await wait(`window.__copies && window.__copies.length`);
+  const copiedCallout = await evalJS("window.__copies[0]||''");
+  check("callout copy outputs GitHub-style callout markdown", copiedCallout.indexOf('[!NOTE]') >= 0, copiedCallout.slice(0, 80));
+
   const been2 = await evalJS("document.querySelectorAll('.bubble').length");
   check("user + assistant bubbles kept in history", been2 >= 2, "bubbles=" + been2);
   check("session titled from the first message", (await evalJS("document.querySelector('.session .t').textContent")) === "is this real?");
@@ -292,6 +313,13 @@ try {
   const ollamaAlready = await evalJS(`!!CONFIG.providers.ollama`);
   if (!ollamaAlready) {
     await evalJS(`document.getElementById('addbtn').click()`);
+    await evalJS(`(()=>{const s=document.getElementById('ntype'); const w=s.parentNode.querySelector('.selbtn'); w.click();})()`);
+    await sleep(150);
+    const ntypeOptions = await evalJS(`[...document.getElementById('ntype').parentNode.querySelectorAll('.selitem')].map(x=>x.textContent).join(',')`);
+    check("Add-provider type dropdown lists all provider types", ntypeOptions === "custom,openai,anthropic,openrouter,opencode,mock", ntypeOptions);
+    await evalJS(`[...document.getElementById('ntype').parentNode.querySelectorAll('.selitem')].find(x=>x.textContent==='openai').click()`);
+    await sleep(100);
+    check("Add-provider type dropdown picks a type + label updates", (await evalJS(`document.getElementById('ntype').value`)) === "openai" && (await evalJS(`document.getElementById('ntype').parentNode.querySelector('.selval').textContent`)) === "openai");
     await evalJS(`(()=>{const s=document.getElementById('preset'); s.value='ollama'; s.dispatchEvent(new Event('change'));})()`);
     await evalJS(`document.getElementById('addsave').click()`);
     const cardAdded = await wait(`[...document.querySelectorAll('#provs .name')].some(n=>n.textContent.trim()==='ollama')`, 8000);

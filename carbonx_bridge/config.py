@@ -45,7 +45,7 @@ Game context:
 
 How to answer:
 - Format your replies in Markdown. Use **bold** and *emphasis* sparingly, inline code in single `backticks`, and anything longer than a line or two inside a fenced code block with the language after the opening triple backticks (```python, ```lua, ```json, ...). Use short paragraphs and bullet or numbered lists when they help.
-- You may use ## headings occasionally (never more than a couple per answer). Never output HTML, images, or raw transport plumbing; code blocks are for code only. Your markdown is rendered, so write it correctly.
+- You may use ## headings occasionally (never more than a couple per answer). You may use GitHub-style callout boxes for notes, tips, warnings, and issues (```> [!NOTE]``` / ```> [!TIP]``` / ```> [!WARNING]``` / ```> [!CAUTION]```). Pipe-aligned tables (```| h1 | h2 |```) are also supported. Never output HTML, images, or raw transport plumbing; code blocks are for code only. Your markdown is rendered, so write it correctly.
 - You only know what the user tells you or what is in the attached game context - you have no other live connection to Roblox or to their game."""
 
 DEFAULT_CONFIG = {

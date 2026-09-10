@@ -110,7 +110,7 @@
   .tabs button { border: 0; background: transparent; color: var(--muted); padding: 6px 14px;
     border-radius: calc(var(--radius) - 2px); font-weight: 550; cursor: pointer;
     transition: background-color .2s ease, color .2s ease, box-shadow .2s ease, transform .1s ease; }
-  .tabs button:hover { color: var(--fg); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+  .tabs button:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .tabs button:active { transform: translateY(1px) scale(.98); }
   .tabs button.active { background: var(--surface); color: var(--fg); box-shadow: 0 1px 4px rgba(0,0,0,.25); }
   select, input[type=text], input[type=password], textarea {
@@ -129,20 +129,29 @@
   .ghost { background: var(--surface-2); color: var(--fg); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 8px 14px; font-weight: 550; cursor: pointer;
     transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
-  .ghost:hover { border-color: var(--accent); color: var(--fg); background: var(--surface); transform: translateY(-1px); }
+  .ghost:hover { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); transform: translateY(-1px); }
   .ghost:active { transform: translateY(1px) scale(.98); }
   .danger { background: transparent; color: var(--err); border: 1px solid transparent;
     border-radius: var(--radius); padding: 6px 10px; font-weight: 550; cursor: pointer;
     transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
-  .danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+  .danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 15%, transparent); }
   .danger:active { transform: translateY(1px) scale(.98); }
   .icon { line-height: 1; padding: 4px 8px; border-radius: var(--radius);
     transition: background-color .18s ease, transform .12s ease, color .18s ease; }
+  .icon:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
   .icon:active { transform: translateY(1px) scale(.98); }
   button { -webkit-tap-highlight-color: transparent; }
 
   main { height: calc(100vh - 56px); }
-  .tab-page { height: 100%; overflow: auto; }
+  .tab-page { height: 100%; overflow: auto; position: relative; }
+  /* author display rules (.chat-page/.config-page { display:flex }) beat the UA [hidden] rule,
+     so a hidden tab still rendered (both pages stacked -> tabs seemed to do nothing). */
+  .tab-page[hidden] { display: none !important; }
+  @keyframes tabswipe {
+    from { opacity: 0; transform: translateY(10px) scale(.992); filter: blur(1px); }
+    to { opacity: 1; transform: none; filter: none; }
+  }
+  .tab-page.page-in { animation: tabswipe .3s cubic-bezier(.22,.61,.36,1); }
   .config-page { padding: 20px; display: flex; flex-direction: column; gap: 14px; max-width: 1080px; margin: 0 auto; }
   .grid2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
   @media (min-width: 900px) { .grid2 { grid-template-columns: 1fr 1fr; } }
@@ -182,7 +191,7 @@
   .sbtn { margin: 12px; padding: 8px; border: 1px dashed var(--border); background: transparent;
     color: var(--fg); border-radius: var(--radius); font-weight: 550; cursor: pointer;
     transition: background-color .18s ease, border-color .18s ease, transform .12s ease; }
-  .sbtn:hover { border-color: var(--accent); background: var(--surface-2); }
+  .sbtn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .sbtn:active { transform: translateY(1px) scale(.98); }
   #sessions { flex: 1; overflow: auto; padding: 0 8px 8px; }
   .session { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
@@ -231,8 +240,11 @@
   .codeblock pre { margin: 0; padding: 12px; overflow: auto; }
   .codeblock code { border: 0; background: transparent; padding: 0; font-size: 12.5px; line-height: 1.5; }
   .copycode { font-size: 11px; padding: 3px 8px; }
+  .copycode:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .callout { display: block; border-radius: var(--radius); border: 1px solid var(--border);
     border-left-width: 3px; padding: 8px 12px; margin: 8px 0; background: var(--surface-2); }
+  .callout-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .copycall { font-size: 12px; padding: 2px 6px; color: var(--muted); }
   .callout .ct { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 1.2px; margin-bottom: 3px; }
   .callout .ct ~ p { margin: 0; }
@@ -287,16 +299,17 @@
   .selarrow { width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
     transform: rotate(45deg) translateY(-2px); opacity: .7; margin-top: -2px; transition: transform .2s ease, opacity .2s ease; }
   .selbtn.open .selarrow { transform: rotate(-135deg) translateY(-1px); opacity: 1; }
-  .selmenu { position: fixed; z-index: 80; min-width: 170px; background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;
+  .selmenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 80; min-width: 100%;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;
     box-shadow: 0 18px 44px rgba(0,0,0,.4); overflow: auto; text-align: left;
     opacity: 0; transform: translateY(-6px) scale(.98); pointer-events: none;
-    transition: opacity .15s ease, transform .18s ease; transform-origin: top left; }
+    transition: opacity .15s ease, transform .18s ease; transform-origin: top left;
+    max-height: 264px; }
   .selmenu.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
   .selitem { display: block; width: 100%; text-align: left; background: transparent; border: 0;
     color: var(--fg); font-size: 13px; padding: 8px 10px; border-radius: calc(var(--radius) - 3px);
     cursor: pointer; transition: background-color .12s ease, color .12s ease; }
-  .selitem:hover { background: var(--surface-2); }
+  .selitem:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .selitem.active { color: var(--accent); font-weight: 650; }
   .selitem.active::before { content: "\2713"; margin-right: 7px; color: var(--accent); font-weight: 700; }
 
@@ -495,8 +508,12 @@ function switchTab(tab) {
   $("tab-chat").hidden = tab !== "chat";
   $("tbConfig").className = tab === "config" ? "active" : "";
   $("tbChat").className = tab === "chat" ? "active" : "";
-  try { localStorage.setItem("carbonx-tab", tab); } catch (e) {}
+  var page = $("tab-" + tab);
+  page.classList.remove("page-in");
+  void page.offsetWidth;
+  page.classList.add("page-in");
   if (tab === "chat") { refreshSessions(); renderChat(); loadGameContext(); autoSize($("chatinput")); }
+  try { localStorage.setItem("carbonx-tab", tab); } catch (e) {}
 }
 $("tbConfig").addEventListener("click", function () { switchTab("config"); });
 $("tbChat").addEventListener("click", function () { switchTab("chat"); });
@@ -552,6 +569,7 @@ function enhanceSelects(scope) {
             sel.value = o.value;
             sel.dispatchEvent(new Event("change", { bubbles: true }));
             close();
+            build();
           });
           menu.appendChild(it);
         })(sel.options[j]);
@@ -565,13 +583,8 @@ function enhanceSelects(scope) {
     function openMenu() {
       build();
       var r = btn.getBoundingClientRect();
-      var top = r.bottom + 6;
-      var mh = Math.min(264, window.innerHeight - top - 12);
-      if (mh < 90) { mh = 200; top = Math.max(8, r.top - mh - 6); }
-      menu.style.top = top + "px";
-      menu.style.left = r.left + "px";
-      menu.style.minWidth = Math.max(170, r.width) + "px";
-      menu.style.maxHeight = mh + "px";
+      var room = window.innerHeight - r.bottom - 12;
+      menu.style.maxHeight = Math.max(90, Math.min(264, room < 200 ? 200 : room)) + "px";
       menu.classList.add("open");
       btn.classList.add("open");
       open = true;
@@ -806,7 +819,7 @@ function renderMarkdown(src) {
       var clines = [cm[2]];
       i++;
       while (i < lines.length && /^\s*>\s*/.test(lines[i])) { clines.push(lines[i].replace(/^\s*>\s*/, "")); i++; }
-      html.push('<div class="callout ' + ctype + '"><span class="ct">' + (ctype === "warn" ? "Warning" : ctype === "bug" ? "Issue" : label) + '</span>' + inline(clines.filter(Boolean).join(" ")) + '</div>');
+      html.push('<div class="callout ' + ctype + '"><div class="callout-top"><span class="ct">' + (ctype === "warn" ? "Warning" : ctype === "bug" ? "Issue" : label) + '</span><button class="icon copycall" title="Copy callout">⧉</button></div>' + inline(clines.filter(Boolean).join(" ")) + '</div>');
       continue;
     }
     // gather a paragraph (until blank line or a fence)
@@ -850,10 +863,30 @@ function renderMarkdown(src) {
 
 function attachCopyHandler() {
   document.addEventListener("click", function (e) {
-    var b = e.target.closest ? e.target.closest(".copycode") : null;
+    var b = e.target.closest ? e.target.closest(".copycode, .copymd, .copycall") : null;
     if (!b) return;
-    var code = b.closest(".codeblock").querySelector("pre code").textContent;
-    copyText(code).then(function () { toast("Code copied."); }).catch(function () { toast("Press Ctrl+C on the code block.", "err"); });
+    var text = "";
+    var label = "";
+    if (b.classList.contains("copycode")) {
+      text = b.closest(".codeblock").querySelector("pre code").textContent;
+      label = "Code copied.";
+    } else if (b.classList.contains("copymd")) {
+      var bubble = b.closest(".bubble");
+      text = (bubble && bubble._raw) || b.getAttribute("data-raw") || "";
+      label = "Markdown copied.";
+    } else if (b.classList.contains("copycall")) {
+      var ce = b.closest(".callout");
+      var lines = [];
+      var ct = ce.querySelector(".ct");
+      if (ct) lines.push("> [!" + ct.textContent.toUpperCase() + "]");
+      var body = ce.cloneNode(true);
+      body.querySelectorAll(".ct, .copycall").forEach(function(x){x.remove();});
+      var txt = (body.textContent || "").trim();
+      if (txt) lines.push("> " + txt);
+      text = lines.join("\n");
+      label = "Callout copied.";
+    }
+    copyText(text).then(function () { toast(label); }).catch(function () { toast("Press Ctrl+C.", "err"); });
   });
 }
 
@@ -942,6 +975,14 @@ function addMsg(role, content) {
   var who = document.createElement("div");
   who.className = "who";
   who.textContent = role === "user" ? "You" : "Assistant";
+  if (role === "assistant") {
+    var cp = document.createElement("button");
+    cp.className = "icon copymd";
+    cp.title = "Copy raw markdown";
+    cp.textContent = "\u29c9";
+    cp.setAttribute("data-raw", content || "");
+    who.appendChild(cp);
+  }
   var body = document.createElement("div");
   body.className = "body";
   if (role === "user") body.textContent = content;
@@ -1030,8 +1071,9 @@ function sendChat() {
   renderChat();
   var aiEl = addMsg("assistant", "\u200b");
   aiEl.classList.add("streaming");
+  aiEl._raw = "";
   var acc = "";
-  var paint = function () { aiEl.querySelector(".body").innerHTML = renderMarkdown(acc) || "\u200b"; chatScroll(); };
+  var paint = function () { aiEl.querySelector(".body").innerHTML = renderMarkdown(acc) || "\u200b"; aiEl._raw = acc; chatScroll(); };
   streamChat(cur.messages.map(function (m) { return { role: m.role, content: m.content }; }), function (d) { acc += d; paint(); })
     .catch(function (e) {
       if (!(e && e.streaming_unsupported)) throw e;
@@ -1041,6 +1083,9 @@ function sendChat() {
       aiEl.classList.remove("streaming");
       if (!acc) aiEl.querySelector(".body").textContent = "(no response)";
       if (acc) acc = acc.trim();
+      aiEl._raw = acc;
+      var copyBtn = aiEl.querySelector(".copymd");
+      if (copyBtn) copyBtn.setAttribute("data-raw", acc || "");
       cur.messages.push({ role: "assistant", content: acc });
       cur.updatedAt = Date.now();
       persistSessions();
