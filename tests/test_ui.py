@@ -294,6 +294,62 @@ class TestConfigEditor(unittest.TestCase):
             server.close()
             tmp.cleanup()
 
+    def test_mock_reply_and_stream_pieces_persist(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, body = server.json(
+                "/ui/config",
+                body={
+                    "providers": {
+                        "mock": {
+                            "reply": "**hello**",
+                            "stream_pieces": ["alpha ", "beta\n", "", " "],
+                        }
+                    }
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+            with open(os.path.join(tmp.name, "config.json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            self.assertEqual(data["providers"]["mock"]["reply"], "**hello**")
+            self.assertEqual(data["providers"]["mock"]["stream_pieces"], ["alpha ", "beta\n", " "])
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_mock_stream_swaps_live_without_restart(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, _ = server.json(
+                "/ui/config",
+                body={"providers": {"mock": {"reply": "LIVE SWAP", "stream_pieces": ["LIVE ", "SWAP"]}}},
+            )
+            self.assertEqual(status, 200)
+            status, headers, data = server.request(
+                "/v1/stream",
+                method="POST",
+                token="test-token-admin",
+                body={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(headers.get("Content-Type", "").startswith("text/event-stream"), True)
+            deltas = []
+            for raw_line in data.decode("utf-8").split("\n"):
+                line = raw_line.strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]" or not payload:
+                    continue
+                evt = json.loads(payload)
+                if evt.get("type") == "content":
+                    deltas.append(evt.get("delta") or "")
+            self.assertEqual("".join(deltas), "LIVE SWAP")
+        finally:
+            server.close()
+            tmp.cleanup()
+
     def test_invalid_default_provider_returns_400(self):
         server, tmp = _make_ui_server()
         try:
@@ -486,6 +542,60 @@ class TestSystemPromptPanel(unittest.TestCase):
             self.assertEqual(data["server"]["host"], "127.0.0.1")
             self.assertEqual(data["server"].get("port"), 0)
             self.assertEqual(data["server"]["system_prompt"], "X")
+        finally:
+            server.close()
+            tmp.cleanup()
+
+
+class TestLumenScript(unittest.TestCase):
+    def _script_body(self, server):
+        status, headers, data = server.request("/ui/lumen-script")
+        return status, headers, data
+
+    def test_served_to_loopback_as_plain_text(self):
+        server, tmp = _make_ui_server()
+        try:
+            status, headers, data = self._script_body(server)
+            self.assertEqual(status, 200)
+            self.assertTrue(headers.get("Content-Type", "").startswith("text/plain"))
+            text = data.decode("utf-8")
+            self.assertIn("BRIDGE_URL", text)
+            self.assertIn("game-context", text)
+            self.assertIn("CONFIG", text)
+            self.assertIn("PASTE-YOUR-BRIDGE-TOKEN-HERE", text)
+            # the served script matches the live repo copy, byte for byte
+            repo = os.path.join(cfg_mod.PROJECT_DIR, "scripts", "lumen_game_context.luau")
+            if os.path.exists(repo):
+                with open(repo, "r", encoding="utf-8") as fh:
+                    self.assertEqual(text, fh.read())
+                self.assertEqual(int(headers.get("Content-Length")), len(data))
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_guarded_like_the_rest_of_the_admin_surface(self):
+        server, tmp = _make_ui_server()
+        try:
+            with mock.patch("carbonx_bridge.server.ui.is_loopback", return_value=False):
+                status, _, _ = self._script_body(server)
+                self.assertEqual(status, 403)
+            status, _, _ = _raw_request(server, "GET", "/ui/lumen-script", {"Host": "rebind.attacker.example"})
+            self.assertEqual(status, 403)
+            status, _, _ = _raw_request(
+                server, "GET", "/ui/lumen-script",
+                {"Host": "127.0.0.1:%d" % server.server.server_address[1], "Sec-Fetch-Site": "cross-site"},
+            )
+            self.assertEqual(status, 403)
+        finally:
+            server.close()
+            tmp.cleanup()
+
+    def test_missing_bundle_returns_404(self):
+        server, tmp = _make_ui_server()
+        try:
+            with mock.patch("carbonx_bridge.server.ui.load_lumen_script", return_value=None):
+                status, _, _ = self._script_body(server)
+                self.assertEqual(status, 404)
         finally:
             server.close()
             tmp.cleanup()

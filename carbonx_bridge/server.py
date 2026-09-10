@@ -73,6 +73,9 @@ _ALLOWED_PROVIDER_FIELDS = frozenset(
         "models",
         "x_opencode_session",
         "headers",
+        # Mock-only knobs (deterministic local replies / stream deltas).
+        "reply",
+        "stream_pieces",
     }
 )
 
@@ -348,6 +351,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._ui_config()
             if path == "/ui/game-context":
                 return self._ui_game_context()
+            if path == "/ui/lumen-script":
+                return self._ui_lumen_script()
             raise NotFound()
         except ApiError as ex:
             self._error(ex)
@@ -519,6 +524,14 @@ class Handler(BaseHTTPRequestHandler):
                 for key, value in fields.items():
                     if key not in _ALLOWED_PROVIDER_FIELDS or value is None:
                         continue
+                    if key == "stream_pieces":
+                        if isinstance(value, list):
+                            pieces = [str(p) for p in value if isinstance(p, (str, int, float)) and str(p) != ""]
+                            if pieces:
+                                current["stream_pieces"] = pieces
+                        elif str(value).strip():
+                            current["stream_pieces"] = [str(value)]
+                        continue
                     value = str(value).strip()
                     if key == "api_key":
                         if value:  # empty string means "keep the current key"
@@ -606,6 +619,18 @@ class Handler(BaseHTTPRequestHandler):
     def _ui_game_context_clear(self):
         self._guard_admin_surface()
         self._send_json(200, self.app._clear_game_context())
+
+    def _ui_lumen_script(self):
+        self._guard_admin_surface()
+        text = ui.load_lumen_script()
+        if text is None:
+            raise NotFound("lumen game-context script not bundled with this build")
+        data = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _stream(self):
         body = self._route()

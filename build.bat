@@ -12,7 +12,11 @@ python -m pip install --upgrade pip
 pip install pyinstaller || goto :fail
 
 echo [build] building carbonx-bridge.exe...
-pyinstaller --noconfirm --clean --onefile --name carbonx-bridge entry.py || goto :fail
+pyinstaller --noconfirm --clean --onefile --name carbonx-bridge --add-data "scripts\lumen_game_context.luau;carbonx_bridge" --add-data "carbonx_bridge\panel.html;carbonx_bridge" entry.py || goto :fail
+
+echo [build] shipping an editable copy of the Lumen scripts next to the exe...
+if not exist "dist\scripts" mkdir "dist\scripts"
+copy /y "scripts\lumen_game_context.luau" "dist\scripts\lumen_game_context.luau" >nul
 
 echo.
 echo [build] done: dist\carbonx-bridge.exe
