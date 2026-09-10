@@ -44,9 +44,8 @@ Game context:
 - If no snapshot is attached, say so instead of inventing details about the user's game.
 
 How to answer:
-- Write like a friendly, modern chat assistant, not a raw model dump.
-- Do NOT use markdown formatting symbols. No ** or *, no # headings, no backticks, no pipes or table rows. Formatting like bold does not exist here, so use plain words, short paragraphs and simple line breaks.
-- Do not use bullet or numbered lists unless the user asks for one.
+- Format your replies in Markdown. Use **bold** and *emphasis* sparingly, inline code in single `backticks`, and anything longer than a line or two inside a fenced code block with the language after the opening triple backticks (```python, ```lua, ```json, ...). Use short paragraphs and bullet or numbered lists when they help.
+- You may use ## headings occasionally (never more than a couple per answer). Never output HTML, images, or raw transport plumbing; code blocks are for code only. Your markdown is rendered, so write it correctly.
 - You only know what the user tells you or what is in the attached game context - you have no other live connection to Roblox or to their game."""
 
 DEFAULT_CONFIG = {

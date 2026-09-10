@@ -63,13 +63,14 @@ edit `config.json` by hand:
      base URL or model. Click *Save & apply* — changes take effect
      immediately, no restart.
    - **Chat like ChatGPT** — a multi-turn chat panel that streams from the
-     default provider, remembers the conversation while the page is open
-     (scroll back through it), and keeps a tidy plain-text look. New chat
-     clears the history; *New chat* is always one click away. Provider-side
-     errors are shown as toasts so you know exactly what failed.
+     default provider and renders Markdown (bold, lists, inline code, and
+     fenced code blocks with a one-click copy button). Conversations live in
+     a sidebar of sessions that survive reloads; *New session* is always one
+     click away. Provider-side errors are shown as toasts so you know exactly
+     what failed.
    - **Assistant identity** — the system prompt sent to the model with every
      message. It tells the AI what the bridge is and who Lumen is, and to
-     answer in clean plain text instead of raw markdown. Edit it, reset to the
+     answer in Markdown. Edit it, reset to the
      built-in default, or blank it out to disable.
    - **Add provider** — plug in your own models without ever touching JSON.
      Presets fill in Ollama (`http://localhost:11434/v1`), LM Studio
@@ -78,8 +79,9 @@ edit `config.json` by hand:
      in the default-provider dropdown immediately. Provider names are
      validated up front and a bad definition is rejected (with the on-disk
      config left untouched) instead of breaking the bridge.
-   - Pick a **theme** — Midnight, Light, Ocean, Forest or Sunset, all with a
-     frosted-glass look — the panel remembers your choice next time.
+   - Pick a **theme** — Midnight, Light, Ocean, Forest, Sunset, Cyberpunk,
+     Dracula or Nord, all with a frosted-glass look — the panel remembers
+     your choice next time.
    - Every action (token create/delete, config save) pops a status toast, so
      nothing ever happens silently.
    - Keys are never shown again after saving; the panel only reports whether a
@@ -116,6 +118,9 @@ is running. There is no separate install — the panel is part of the bridge.
 | `POST /v1/stream` | yes | `text/event-stream` (see below). |
 | `POST /v1/game-context` | yes | Give the AI a live Lumen snapshot of the user's game (game name, players, decompiled files), attached to every chat. |
 | `DELETE /v1/game-context` | yes | Forget the attached snapshot. |
+
+Inside the loopback-only control panel (`/ui/*`): `GET /ui/lumen-script`
+returns the paste-ready Lumen collector script (see "Game context" below).
 
 `Authorization: Bearer <token>` maps to a configured user + tier. Client
 supplied user/role/plan fields are ignored.
@@ -166,8 +171,9 @@ Mid-stream errors emit a `data: {"type":"error","error":{...}}` event before
 ### Assistant identity (system prompt)
 
 Every chat (and stream) request gets a system prompt that tells the AI what
-the bridge is, who Lumen is, and to answer in clean plain text — no `**`, no
-markdown tables. Configure it in `config.json`:
+the bridge is, who Lumen is, and to answer in Markdown (bold, inline code,
+fenced code blocks, short lists, occasional headings — rendered by the chat
+panel). Configure it in `config.json`:
 
 ```json
 "server": { "system_prompt": "Your custom identity text..." }
@@ -205,6 +211,14 @@ request({
   Body = __gameJSON, -- { "game": "...", "players": [ {...} ], "files": [ { "path": "...", "content": "..." } ] }
 })
 ```
+
+No script to write? The control panel ships a complete, battle-tested collector
+(`GET /ui/lumen-script`). Open `http://localhost:8787/`, scroll to the
+*Attach Lumen* card, press **Copy script**, paste it into Lumen's script
+editor and run it: it fills in this machine's bridge address and an access
+token itself, then pushes a fresh snapshot every few seconds (game name,
+current players, decompiled scripts). You can also grab the same file from
+`scripts/lumen_game_context.luau` in this repo.
 
 The snapshot lives **in memory only** — it is never written to disk — and is
 dropped on restart. The panel shows a *"Game context attached"* pill while one
