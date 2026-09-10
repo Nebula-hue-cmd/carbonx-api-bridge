@@ -1,5 +1,7 @@
 # CarbonX API Bridge
 
+API Bridge made specifically for Lumen External. (Fork it to modify it as you please. Was made with a mix of human and AI).
+
 A **Bring-Your-Own-Key** (BYOK) HTTP API bridge for LLMs, **for Windows**.
 Clients (Lumen scripts, editors, consoles) talk to one stable JSON API; the
 bridge handles auth, rate limits, and provider routing for OpenAI, Anthropic,
