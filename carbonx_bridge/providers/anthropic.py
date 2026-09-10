@@ -115,8 +115,18 @@ class Anthropic(Provider):
                 delta = data.get("delta") or {}
                 if delta.get("type") == "text_delta" and delta.get("text"):
                     emit(delta["text"])
+            if etype == "message_start":
+                # Anthropic reports input_tokens only in message_start.
+                start_usage = (data.get("message") or {}).get("usage")
+                start_norm = usage_norm(start_usage)
+                if start_norm:
+                    usage = {**(usage or {}), **start_norm}
             if etype == "message_delta" and data.get("usage"):
-                usage = usage_norm(data["usage"]) or usage
+                delta_norm = usage_norm(data["usage"])
+                if delta_norm:
+                    merged = {**(usage or {}), **delta_norm}
+                    merged["total_tokens"] = (merged.get("prompt_tokens") or 0) + (merged.get("completion_tokens") or 0)
+                    usage = merged
         return {"model": body["model"], "usage": usage}
 
     def known_models(self):

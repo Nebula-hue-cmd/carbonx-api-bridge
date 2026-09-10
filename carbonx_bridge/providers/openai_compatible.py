@@ -109,8 +109,9 @@ class OpenAICompatible(Provider):
             fragment = delta.get("content")
             if fragment:
                 emit(fragment)
-            if choices[0].get("finish_reason"):
-                break
+            # Do not break on finish_reason here: OpenAI/OpenRouter deliver the
+            # usage-only chunk (requested via stream_options.include_usage above)
+            # AFTER the chunk that carries finish_reason, with empty choices.
         return {"model": body["model"], "usage": usage}
 
     # -- models ----------------------------------------------------------
